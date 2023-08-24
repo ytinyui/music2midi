@@ -114,9 +114,11 @@ class MidiAudioPair:
         self.vocals = basename + ".vocals.mp3"
 
     def delete_files_myself(self):
-        shutil.rmtree(os.path.join(self.audio_dir, self.yaml.piano.ytid))
-        os.remove(self.yaml_path)
-        os.remove(self.original_midi)
+        shutil.rmtree(os.path.join(self.audio_dir, self.yaml.piano.ytid),ignore_errors=True)
+        if os.path.exists(self.yaml_path):
+            os.remove(self.yaml_path)
+        if os.path.exists(self.original_midi):
+            os.remove(self.original_midi)
         if os.path.exists(self.original_wav):
             os.remove(self.original_wav)
 
