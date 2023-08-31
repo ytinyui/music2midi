@@ -79,6 +79,7 @@ class PopDataModule(pl.LightningDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_set,
+            shuffle=True,
             batch_size=self.config.training.batch_size,
             num_workers=self.config.training.num_workers,
             collate_fn=collate_fn)
@@ -93,9 +94,7 @@ class PopDataModule(pl.LightningDataModule):
 
 def collate_fn(batch):
     x_batch, y_batch = zip(*batch)
-    # padded shape: (batch_size, length, feat_dim)
     x_batch = pad_sequence(x_batch, batch_first=True, padding_value=PAD)
-    # padded shape: (batch_size, length)
     # All labels set to `-100` are ignored (masked)
     y_batch = pad_sequence(y_batch, batch_first=True, padding_value=-100)
     return x_batch, y_batch
