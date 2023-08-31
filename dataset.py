@@ -55,15 +55,13 @@ class PopDataset(Dataset):
         while True:
             start_idx = np.random.randint(0, len(beat_time) - n_beats - 1)
             end_idx = start_idx + n_beats
-            
-            audio = self.get_audio_segment(self.audio_paths[index], beat_time, start_idx, end_idx)
-            # x.shape = (length, feat_dim)
-            x = self.spectrogram(torch.from_numpy(audio)).transpose(-1, -2)
             # select midi notes segment: note onset within segment or note offset within segment
             notes_segment = self.get_notes_segment(self.midi_notes[index], start_idx, end_idx)
-            
             if len(notes_segment) > 0:
                 break
+        audio = self.get_audio_segment(self.audio_paths[index], beat_time, start_idx, end_idx)
+        # x.shape = (length, feat_dim)
+        x = self.spectrogram(torch.from_numpy(audio)).transpose(-1, -2)   
         y = torch.from_numpy(self.tokenizer.notes_to_tokens(notes_segment))
         
         return x, y
