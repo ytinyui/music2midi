@@ -98,22 +98,6 @@ def collate_fn(batch):
     # padded shape: (batch_size, length, feat_dim)
     x_batch = pad_sequence(x_batch, batch_first=True, padding_value=PAD)
     # padded shape: (batch_size, length)
-    y_batch = pad_sequence(y_batch, batch_first=True, padding_value=PAD)
+    # All labels set to `-100` are ignored (masked)
+    y_batch = pad_sequence(y_batch, batch_first=True, padding_value=-100)
     return x_batch, y_batch
-    
-    
-if __name__ == '__main__':
-    pop_dataset = PopDataset("../pop2piano-dataset", "config.yaml")
-    x, midi_tokens = pop_dataset[0]
-    print(x.shape, midi_tokens.shape)
-    print("dataset ok")
-    
-    pop_data_module = PopDataModule("../pop2piano-dataset")
-    
-    for batch in pop_data_module.train_dataloader():
-        x, y = batch
-        print(x.shape, y.shape)
-        break
-    print("dataloader ok")
-    
-    
