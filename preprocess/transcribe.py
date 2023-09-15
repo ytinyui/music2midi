@@ -13,11 +13,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=str, default=None, help="provided audio")
     args = parser.parse_args()
-    
+
     path = Path(args.path)
     files = path.glob("*.wav")
-    
-    transcriptor = PianoTranscription(device='cuda', checkpoint_path=None)
+
+    transcriptor = PianoTranscription(device="cuda", checkpoint_path=None)
     for file in tqdm(list(files)):
         midi_file = (path / file).with_suffix(".mid")
         audio, _ = load_audio(str(path / file), sr=sample_rate, mono=True)
