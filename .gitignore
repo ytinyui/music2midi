@@ -1,4 +1,2 @@
 __pycache__
-*.zip
-.ipynb_checkpoints
-.vscode
+lightning_logs
