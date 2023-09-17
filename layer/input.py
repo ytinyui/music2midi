@@ -25,22 +25,18 @@ class LogMelSpectrogram(nn.Module):
         return X
 
 
-class ConcatEmbeddingToMel(nn.Module):
-    def __init__(self, embedding_offset, n_vocab, n_dim) -> None:
+class MelConditioner(nn.Module):
+    def __init__(self, n_vocab, n_dim) -> None:
         super().__init__()
         self.embedding = nn.Embedding(num_embeddings=n_vocab, embedding_dim=n_dim)
-        self.embedding_offset = embedding_offset
 
-    def forward(self, feature, index_value):
+    def forward(self, feature: torch.Tensor, index: torch.Tensor):
         """
-        index_value : (batch, )
-        feature : (batch, time, feature_dim)
-        """
-        index_shifted = index_value - self.embedding_offset
+        Concatenate composer embedding to feature
 
+        feature: (batch, L, n_dim)
+        index : (batch, )
+        """
         # (batch, 1, feature_dim)
-        composer_embedding = self.embedding(index_shifted).unsqueeze(1)
-        # print(composer_embedding.shape, feature.shape)
-        # (batch, 1 + time, feature_dim)
-        inputs_embeds = torch.cat([composer_embedding, feature], dim=1)
-        return inputs_embeds
+        composer_embedding = self.embedding(index)
+        return torch.cat([composer_embedding, feature], dim=1)
