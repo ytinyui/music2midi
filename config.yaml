@@ -32,15 +32,17 @@ t5:
   feed_forward_proj: gated-gelu
   tie_word_embeddings: false
   tie_encoder_decoder: false
-  vocab_size: 2400
+  vocab_size: 400
   n_positions: 1024
   relative_attention_num_buckets: 32
 tokenizer:
   vocab_size:
     special: 4
-    note: 128
-    velocity: 2
+    mask: 10
+    pitch: 128
+    velocity: 128
     time: 100
+  relative_time_steps: False
 trainer:
   max_epochs: 8000
   accumulate_grad_batches: 1

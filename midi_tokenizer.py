@@ -1,430 +1,357 @@
 import numpy as np
-from numba import jit
+from numba import njit
 import pretty_midi
-import scipy.interpolate as interp
-
-TOKEN_SPECIAL: int = 0
-TOKEN_NOTE: int = 1
-TOKEN_VELOCITY: int = 2
-TOKEN_TIME: int = 3
-
-DEFAULT_VELOCITY: int = 77
-
-TIE: int = 2
-EOS: int = 1
-PAD: int = 0
+from omegaconf import DictConfig
 
 
-def extrapolate_beat_times(beat_times, n_extend=1):
-    beat_times_function = interp.interp1d(
-        np.arange(beat_times.size),
-        beat_times,
-        bounds_error=False,
-        fill_value="extrapolate",
-    )
-
-    ext_beats = beat_times_function(
-        np.linspace(0, beat_times.size + n_extend - 1, beat_times.size + n_extend)
-    )
-
-    return ext_beats
+PAD = 0
+EOS = 1
 
 
-@jit(nopython=True, cache=True)
-def fast_tokenize(idx, token_type, n_special, n_note, n_velocity):
-    if token_type == TOKEN_TIME:
-        return n_special + n_note + n_velocity + idx
-    elif token_type == TOKEN_VELOCITY:
-        return n_special + n_note + idx
-    elif token_type == TOKEN_NOTE:
-        return n_special + idx
-    elif token_type == TOKEN_SPECIAL:
-        return idx
-    else:
-        return -1
+class TokenizerBase:
+    """
+    This is the base class of the MIDI Tokenizer.
+    MIDITokenizer tokenizes note velocity while MIDITokenizerNoVelocity treats velocity as onsets.
+    """
 
-
-@jit(nopython=True, cache=True)
-def fast_detokenize(idx, n_special, n_note, n_velocity, time_idx_offset):
-    if idx >= n_special + n_note + n_velocity:
-        return (TOKEN_TIME, (idx - (n_special + n_note + n_velocity)) + time_idx_offset)
-    elif idx >= n_special + n_note:
-        return TOKEN_VELOCITY, idx - (n_special + n_note)
-    elif idx >= n_special:
-        return TOKEN_NOTE, idx - n_special
-    else:
-        return TOKEN_SPECIAL, idx
-
-
-class MidiTokenizer:
-    def __init__(self, config) -> None:
+    def __init__(self, config: DictConfig):
         self.config = config
+        self.mask_offset = self.config.vocab_size.special
+        self.pitch_offset = self.mask_offset + self.config.vocab_size.mask
+        self.velocity_offset = self.pitch_offset + self.config.vocab_size.pitch
+        self.time_offset = self.velocity_offset + self.config.vocab_size.velocity
 
-    def tokenize_note(self, idx, token_type):
-        rt = fast_tokenize(
-            idx,
-            token_type,
-            self.config.vocab_size.special,
-            self.config.vocab_size.note,
-            self.config.vocab_size.velocity,
-        )
-        if rt == -1:
-            raise ValueError(f"type {type} is not a predefined token type.")
-        else:
-            return rt
+    def to_string(self, tokens: np.ndarray) -> list[str]:
+        def _to_string(token: int) -> str:
+            if token == PAD:
+                return "PAD"
+            if token == EOS:
+                return "EOS"
+            if token >= self.time_offset:
+                return ("time", token - self.time_offset)
+            if token >= self.velocity_offset:
+                return ("velocity", token - self.velocity_offset)
+            if token >= self.pitch_offset:
+                return ("note", token - self.pitch_offset)
+            if token >= self.mask_offset:
+                return ("mask", token - self.mask_offset)
 
-    def notes_to_tokens(self, notes):
+            raise ValueError(f"Invalid token '{token}'")
+
+        return [_to_string(token) for token in tokens]
+
+    def batch_decode(
+        self, batched_tokens: np.ndarray, n_steps: int, cutoff_idx: int = None
+    ) -> np.ndarray:
         """
-        notes : (onset idx, offset idx, pitch, velocity)
-        """
-        max_time_idx = notes[:, :2].max()
+        input: [N, L]
+        order: batch then seq_len
+            - example: input[0  , 0], input[0, 1], ..., input[0, L-1],
+                       input[1  , 0], input[1, 1], ..., input[1, L-1],
+                       ...
+                       input[N-1, 0], input[N, 1], ..., input[N, L-1]
 
-        times = [[] for i in range((max_time_idx + 1))]
-        for onset, offset, pitch, velocity in notes:
-            times[onset].append([pitch, velocity])
-            times[offset].append([pitch, 0])
-
-        tokens = []
-        current_velocity = 0
-        for i, time in enumerate(times):
-            if len(time) == 0:
-                continue
-            tokens.append(self.tokenize_note(i, TOKEN_TIME))
-            for pitch, velocity in time:
-                velocity = int(velocity > 0)
-                if current_velocity != velocity:
-                    current_velocity = velocity
-                    tokens.append(self.tokenize_note(velocity, TOKEN_VELOCITY))
-                tokens.append(self.tokenize_note(pitch, TOKEN_NOTE))
-
-        return np.array(tokens, dtype=int)
-
-    def detokenize(self, token, time_idx_offset):
-        type, value = fast_detokenize(
-            token,
-            n_special=self.config.vocab_size.special,
-            n_note=self.config.vocab_size.note,
-            n_velocity=self.config.vocab_size.velocity,
-            time_idx_offset=time_idx_offset,
-        )
-        if type != TOKEN_TIME:
-            value = int(value)
-        return [type, value]
-
-    def to_string(self, tokens, time_idx_offset=0):
-        nums = [
-            self.detokenize(token, time_idx_offset=time_idx_offset) for token in tokens
-        ]
-        strings = []
-        for i in range(len(nums)):
-            type = nums[i][0]
-            value = nums[i][1]
-
-            if type == TOKEN_TIME:
-                type = "time"
-            elif type == TOKEN_SPECIAL:
-                if value == EOS:
-                    value = "EOS"
-                elif value == PAD:
-                    value = "PAD"
-                elif value == TIE:
-                    value = "TIE"
-                else:
-                    value = "Unknown Special"
-            elif type == TOKEN_NOTE:
-                type = "note"
-            elif type == TOKEN_VELOCITY:
-                type = "velocity"
-            strings.append((type, value))
-        return strings
-
-    def split_notes(self, notes, beatsteps, time_from, time_to):
-        """
-        Assumptions
-        - notes are sorted by onset time
-        - beatsteps are sorted by time
-        """
-        start_idx = np.searchsorted(beatsteps, time_from)
-        start_note = np.searchsorted(notes[:, 0], start_idx)
-
-        end_idx = np.searchsorted(beatsteps, time_to)
-        end_note = np.searchsorted(notes[:, 0], end_idx)
-        splited_notes = notes[start_note:end_note]
-
-        return splited_notes, (start_idx, end_idx, start_note, end_note)
-
-    def notes_to_relative_tokens(
-        self, notes, offset_idx, add_eos=False, add_composer=False, composer_value=None
-    ):
-        """
-        notes : (onset idx, offset idx, pitch, velocity)
+        n_steps: step offset per batch
+        return: [L']
         """
 
-        def _add_eos(tokens):
-            tokens = np.concatenate((tokens, np.array([EOS], dtype=tokens.dtype)))
-            return tokens
+        ret = []
+        start_idx = 0
+        for tokens in batched_tokens:
+            ret.append(self.decode(tokens, start_idx=start_idx, cutoff_idx=cutoff_idx))
+            start_idx += n_steps
 
-        def _add_composer(tokens, composer_value):
-            tokens = np.concatenate(
-                (np.array([composer_value], dtype=tokens.dtype), tokens)
-            )
-            return tokens
+        return np.concatenate(ret)
 
+    def __call__(
+        self,
+        notes: np.ndarray,
+        offset_idx: int = 0,
+        add_eos: bool = True,
+        cutoff_idx: int = None,
+    ) -> np.ndarray:
+        """
+        - note[0]: (onset_idx, offset_idx, pitch, velocity)
+        - offset_idx: optional, if offset_idx is -1, the time is aligned with the first onset
+        - cutoff_idx: optional, drop all notes after cutoff_idx
+
+        - return format: [onset time 1, pitch 1, velocity 1, offset time 1, pitch 1, 0,
+                          onset time 2, pitch 2, velocity 2, offset time 2, ...]
+
+        Notes:
+            - if offset_idx is None, the time is aligned with the first onset
+            - if add_eos is True, add EOS token at the end of the tokens list
+            - if cutoff_idx is None, notes with times beyond the vocab size for time are dropped
+            - offset_idx is applied before cutoff_idx
+        """
         if len(notes) == 0:
-            tokens = np.array([], dtype=int)
-            if add_eos:
-                tokens = _add_eos(tokens)
-            if add_composer:
-                tokens = _add_composer(tokens, composer_value=composer_value)
-            return tokens
+            tokens = np.array([])
 
-        max_time_idx = notes[:, :2].max()
+        else:
+            if offset_idx == -1:
+                offset_idx = notes[0, 0]
+            notes[:, :2] -= offset_idx
 
-        # times[time_idx] = [[pitch, .. ], [pitch, 0], ..]
-        times = [[] for i in range((max_time_idx + 1 - offset_idx))]
-        for abs_onset, abs_offset, pitch, velocity in notes:
-            rel_onset = abs_onset - offset_idx
-            rel_offset = abs_offset - offset_idx
-            times[rel_onset].append([pitch, velocity])
-            times[rel_offset].append([pitch, 0])
+            if cutoff_idx is None:
+                cutoff_idx = self.config.vocab_size.time
+            notes = notes[notes[:, 0] < cutoff_idx]
+            notes[:, 1] = np.where(notes[:, 1] > cutoff_idx, cutoff_idx, notes[:, 1])
 
-        # 여기서부터는 전부 시간 0(offset) 기준
-        tokens = []
-        current_velocity = 0
-        current_time_idx = 0
+            time_indices = np.unique(notes[:, :2])
+            tokens = np.array(
+                [
+                    tok
+                    for index in time_indices
+                    for tok in self._get_tokens(
+                        onset_notes=get_onset_notes(notes, index),
+                        offset_notes=get_offset_notes(notes, index),
+                        index=index,
+                    )
+                ]
+            )
+            # absolute time indices to relative time steps
+            if self.config.relative_time_steps:
+                relative_time_steps = np.diff(time_indices, prepend=0)
+                tokens[tokens >= self.time_offset] = (
+                    relative_time_steps + self.time_offset
+                )
 
-        for rel_idx, time in enumerate(times):
-            if len(time) == 0:
-                continue
-            time_idx_shift = rel_idx - current_time_idx
-            current_time_idx = rel_idx
-
-            tokens.append(self.tokenize_note(time_idx_shift, TOKEN_TIME))
-            for pitch, velocity in time:
-                velocity = int(velocity > 0)
-                if current_velocity != velocity:
-                    current_velocity = velocity
-                    tokens.append(self.tokenize_note(velocity, TOKEN_VELOCITY))
-                tokens.append(self.tokenize_note(pitch, TOKEN_NOTE))
-
-        tokens = np.array(tokens, dtype=int)
         if add_eos:
-            tokens = _add_eos(tokens)
-        if add_composer:
-            tokens = _add_composer(tokens, composer_value=composer_value)
+            tokens = np.append(tokens, EOS)
+
+        tokens = np.array(tokens, dtype=np.int_)
+
         return tokens
 
-    def relative_batch_tokens_to_midi(
+    def decode(
         self,
-        tokens,
-        beatstep,
-        beat_offset_idx=None,
-        bars_per_batch=None,
-        cutoff_time_idx=None,
+        tokens: np.ndarray,
+        start_idx: int = 0,
+        cutoff_idx: int = None,
+    ) -> np.ndarray:
+        """
+        Decode tokens into notes array.
+        If cutoff_idx is not None, the note events after cutoff_idx are ignored.
+        """
+        notes = self._decode_tokens(tokens, start_idx)
+        # remove dummy element and notes without offset
+        notes = notes[notes[:, 1] != -1]
+
+        if cutoff_idx is not None:
+            # drop note onsets beyond cutoff_idx
+            notes = notes[notes[:, 0] < cutoff_idx]
+            # truncate offsets
+            notes[:, 1] = np.where(notes[:, 1] > cutoff_idx, cutoff_idx, notes[:, 1])
+
+        return notes
+
+    def _get_tokens(
+        self, onset_notes: np.ndarray, offset_notes: np.ndarray, index: int
     ):
         """
-        tokens : (batch, sequence)
-        beatstep : (times, )
+        Get tokens from onset_notes and offset_notes, given the time index.
         """
-        beat_offset_idx = 0 if beat_offset_idx is None else beat_offset_idx
-        notes = None
-        bars_per_batch = 2 if bars_per_batch is None else bars_per_batch
+        return NotImplementedError
 
-        N = len(tokens)
-        for n in range(N):
-            _tokens = tokens[n]
-            _start_idx = beat_offset_idx + n * bars_per_batch * 4
-            _cutoff_time_idx = cutoff_time_idx + _start_idx
-            _notes = self.relative_tokens_to_notes(
-                _tokens,
-                start_idx=_start_idx,
-                cutoff_time_idx=_cutoff_time_idx,
-            )
-            # print(_notes, "\n-------")
-            if len(_notes) == 0:
-                pass
-                # print("_notes zero")
-            elif notes is None:
-                notes = _notes
-            else:
-                notes = np.concatenate((notes, _notes), axis=0)
-
-        if notes is None:
-            notes = []
-        midi = self.notes_to_midi(notes, beatstep, offset_sec=beatstep[beat_offset_idx])
-        return midi, notes
-
-    def relative_tokens_to_notes(self, tokens, start_idx, cutoff_time_idx=None):
-        # TODO remove legacy
-        # decoding 첫토큰이 편곡자인 경우
-        if tokens[0] >= sum(self.config.vocab_size.values()):
-            tokens = tokens[1:]
-
-        words = [self.detokenize(token, time_idx_offset=0) for token in tokens]
-
-        if hasattr(start_idx, "item"):
-            """
-            if numpy or torch tensor
-            """
-            start_idx = start_idx.item()
-
-        current_idx = start_idx
-        current_velocity = 0
-        note_onsets_ready = [None for i in range(self.config.vocab_size.note + 1)]
-        notes = []
-        for type, number in words:
-            if type == TOKEN_SPECIAL:
-                if number == EOS:
-                    break
-            elif type == TOKEN_TIME:
-                current_idx += number
-                if cutoff_time_idx is not None:
-                    current_idx = min(current_idx, cutoff_time_idx)
-
-            elif type == TOKEN_VELOCITY:
-                current_velocity = number
-            elif type == TOKEN_NOTE:
-                pitch = number
-                if current_velocity == 0:
-                    # note_offset
-                    if note_onsets_ready[pitch] is None:
-                        # offset without onset
-                        pass
-                    else:
-                        onset_idx = note_onsets_ready[pitch]
-                        if onset_idx >= current_idx:
-                            # No time shift after previous note_on
-                            pass
-                        else:
-                            offset_idx = current_idx
-                            notes.append(
-                                [onset_idx, offset_idx, pitch, DEFAULT_VELOCITY]
-                            )
-                            note_onsets_ready[pitch] = None
-                else:
-                    # note_on
-                    if note_onsets_ready[pitch] is None:
-                        note_onsets_ready[pitch] = current_idx
-                    else:
-                        # note-on already exists
-                        onset_idx = note_onsets_ready[pitch]
-                        if onset_idx >= current_idx:
-                            # No time shift after previous note_on
-                            pass
-                        else:
-                            offset_idx = current_idx
-                            notes.append(
-                                [onset_idx, offset_idx, pitch, DEFAULT_VELOCITY]
-                            )
-                            note_onsets_ready[pitch] = current_idx
-            else:
-                raise ValueError
-
-        for pitch, note_on in enumerate(note_onsets_ready):
-            # force offset if no offset for each pitch
-            if note_on is not None:
-                if cutoff_time_idx is None:
-                    cutoff = note_on + 1
-                else:
-                    cutoff = max(cutoff_time_idx, note_on + 1)
-
-                offset_idx = max(current_idx, cutoff)
-                notes.append([note_on, offset_idx, pitch, DEFAULT_VELOCITY])
-
-        if len(notes) == 0:
-            return []
-        else:
-            notes = np.array(notes)
-            note_order = notes[:, 0] * 128 + notes[:, 1]
-            notes = notes[note_order.argsort()]
-            return notes
-
-    def notes_to_midi(self, notes, beatstep, offset_sec=None):
-        new_pm = pretty_midi.PrettyMIDI(resolution=384, initial_tempo=120.0)
-        new_inst = pretty_midi.Instrument(program=0)
-        new_notes = []
-        if offset_sec is None:
-            offset_sec = 0.0
-
-        for onset_idx, offset_idx, pitch, velocity in notes:
-            new_note = pretty_midi.Note(
-                velocity=velocity,
-                pitch=pitch,
-                start=beatstep[onset_idx] - offset_sec,
-                end=beatstep[offset_idx] - offset_sec,
-            )
-            new_notes.append(new_note)
-        new_inst.notes = new_notes
-        new_pm.instruments.append(new_inst)
-        new_pm.remove_invalid_notes()
-        return new_pm
+    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
+        return NotImplementedError
 
 
-@jit(nopython=True, cache=False)
-def fast_notes_to_relative_tokens(
-    notes, offset_idx, max_time_idx, n_special, n_note, n_velocity
-):
-    """
-    notes : (onset idx, offset idx, pitch, velocity)
-    """
+class MidiTokenizer(TokenizerBase):
+    def __init__(self, config):
+        super().__init__(config)
 
-    times_p = [np.array([], dtype=int) for i in range((max_time_idx + 1 - offset_idx))]
-    times_v = [np.array([], dtype=int) for i in range((max_time_idx + 1 - offset_idx))]
-
-    for abs_onset, abs_offset, pitch, velocity in notes:
-        rel_onset = abs_onset - offset_idx
-        rel_offset = abs_offset - offset_idx
-        times_p[rel_onset] = np.append(times_p[rel_onset], pitch)
-        times_v[rel_onset] = np.append(times_v[rel_onset], velocity)
-        times_p[rel_offset] = np.append(times_p[rel_offset], pitch)
-        times_v[rel_offset] = np.append(times_v[rel_offset], velocity)
-
-    # 여기서부터는 전부 시간 0(offset) 기준
-    tokens = []
-    current_velocity = np.array([0])
-    current_time_idx = np.array([0])
-
-    # range가 0일 수도 있으니까..
-    for i in range(len(times_p)):
-        rel_idx = i
-        notes_at_time = times_p[i]
-        if len(notes_at_time) == 0:
-            continue
-
-        time_idx_shift = rel_idx - current_time_idx[0]
-        current_time_idx[0] = rel_idx
-
-        token = fast_tokenize(
-            time_idx_shift,
-            TOKEN_TIME,
-            n_special=n_special,
-            n_note=n_note,
-            n_velocity=n_velocity,
-        )
-        tokens.append(token)
-
-        for j in range(len(notes_at_time)):
-            pitch = times_p[j]
-            velocity = times_v[j]
-            # for pitch, velocity in time:
-            velocity = int(velocity > 0)
-            if current_velocity[0] != velocity:
-                current_velocity[0] = velocity
-                token = fast_tokenize(
-                    velocity,
-                    TOKEN_VELOCITY,
-                    n_special=n_special,
-                    n_note=n_note,
-                    n_velocity=n_velocity,
+    def _get_tokens(
+        self, onset_notes: np.ndarray, offset_notes: np.ndarray, index: int
+    ):
+        return (
+            [index + self.time_offset]
+            + [
+                tok
+                for note in onset_notes
+                for tok in _tokenize(
+                    note,
+                    onset=True,
+                    pitch_offset=self.pitch_offset,
+                    velocity_offset=self.velocity_offset,
                 )
-                tokens.append(token)
-            token = fast_tokenize(
-                pitch,
-                TOKEN_NOTE,
-                n_special=n_special,
-                n_note=n_note,
-                n_velocity=n_velocity,
-            )
-            tokens.append(token)
+            ]
+            + [
+                tok
+                for note in offset_notes
+                for tok in _tokenize(
+                    note,
+                    onset=False,
+                    pitch_offset=self.pitch_offset,
+                    velocity_offset=self.velocity_offset,
+                )
+            ]
+        )
 
-    return np.array(tokens)
+    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
+        notes = np.array([[-1, -1, -1, -1]])  # dummy element
+        cur_time = start_idx
+        cur_velocity = -1
+        cur_note = -1
+
+        for token in tokens:
+            if token == EOS:
+                break
+            if token >= self.time_offset:
+                cur_time += token - self.time_offset
+                cur_velocity = -1
+                cur_note = -1
+            elif token >= self.velocity_offset:
+                cur_velocity = token - self.velocity_offset
+            elif token >= self.pitch_offset:
+                cur_note = token - self.pitch_offset
+            elif token >= self.mask_offset:
+                continue
+
+            if -1 in [cur_time, cur_velocity, cur_note]:
+                continue
+
+            notes = _tokens_to_note(notes, cur_time, cur_note, cur_velocity)
+
+            cur_velocity = -1
+            cur_note = -1
+
+        return notes
+
+
+class MidiTokenizerNoVelocity(TokenizerBase):
+    def __init__(self, config: DictConfig, default_velocity=77):
+        super().__init__(config)
+        self.default_velocity = default_velocity
+
+    def _get_tokens(
+        self, onset_notes: np.ndarray, offset_notes: np.ndarray, index: int
+    ):
+        onset_tokens = (
+            [1 + self.velocity_offset]
+            + [
+                _tokenize_no_velocity(note, pitch_offset=self.pitch_offset)
+                for note in onset_notes
+            ]
+            if len(onset_notes) > 0
+            else []
+        )
+        offset_tokens = (
+            [0 + self.velocity_offset]
+            + [
+                _tokenize_no_velocity(note, pitch_offset=self.pitch_offset)
+                for note in offset_notes
+            ]
+            if len(offset_notes) > 0
+            else []
+        )
+        return [index + self.time_offset] + onset_tokens + offset_tokens
+
+    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
+        notes = np.array([[-1, -1, -1, -1]])  # dummy element
+        cur_time = start_idx
+        cur_velocity = -1
+        cur_note = -1
+
+        for token in tokens:
+            if token == EOS:
+                break
+            if token >= self.time_offset:
+                cur_time += token - self.time_offset
+                cur_velocity = -1
+                cur_note = -1
+            elif token >= self.velocity_offset:
+                cur_velocity = (token - self.velocity_offset) * self.default_velocity
+                cur_note = -1
+            elif token >= self.pitch_offset:
+                cur_note = token - self.pitch_offset
+            elif token >= self.mask_offset:
+                continue
+
+            if -1 in [cur_time, cur_velocity, cur_note]:
+                continue
+            notes = _tokens_to_note(notes, cur_time, cur_note, cur_velocity)
+
+            cur_note = -1
+
+        return notes
+
+
+def notes_to_midi(notes: np.ndarray, beatstep: np.ndarray, offset_sec: float = 0.0):
+    new_pm = pretty_midi.PrettyMIDI(resolution=384, initial_tempo=120.0)
+    new_inst = pretty_midi.Instrument(program=0)
+
+    new_inst.notes = [
+        pretty_midi.Note(
+            velocity=velocity,
+            pitch=pitch,
+            start=beatstep[onset_idx] - offset_sec,
+            end=beatstep[offset_idx] - offset_sec,
+        )
+        for onset_idx, offset_idx, pitch, velocity in notes
+    ]
+    new_pm.instruments.append(new_inst)
+    new_pm.remove_invalid_notes()
+
+    return new_pm
+
+
+def get_onset_notes(notes: np.ndarray, index: int):
+    return notes[notes[:, 0] == index]
+
+
+def get_offset_notes(notes: np.ndarray, index: int):
+    return notes[notes[:, 1] == index]
+
+
+@njit
+def _tokenize(
+    note: np.ndarray,
+    onset: bool,
+    pitch_offset: int,
+    velocity_offset: int,
+) -> list:
+    onset_idx, offset_idx, pitch, velocity = note
+    if onset:
+        return [pitch + pitch_offset, velocity + velocity_offset]
+    else:
+        return [pitch + pitch_offset, velocity_offset]
+
+
+@njit
+def _tokenize_no_velocity(
+    note: np.ndarray,
+    pitch_offset: int,
+) -> int:
+    onset_idx, offset_idx, pitch, velocity = note
+    return pitch + pitch_offset
+
+
+@njit
+def _tokens_to_note(
+    notes: np.ndarray,
+    onset_time_index: int,
+    pitch: int,
+    velocity: int,
+) -> np.ndarray:
+    # note onset
+    # the offset time is set to -1 as dummy placement
+    if velocity > 0:
+        append_note = np.array([[onset_time_index, -1, pitch, velocity]], dtype=np.int_)
+        notes = np.vstack((notes, append_note))
+
+    # note offset
+    elif velocity == 0:
+        offset_note_idx = np.where(
+            (
+                (notes[:, 0] < onset_time_index)
+                & (notes[:, 1] == -1)
+                & (notes[:, 2] == pitch)
+            )
+        )
+        # ignore note is onset is not found
+        if len(offset_note_idx) > 0:
+            # print("velocity")
+            notes[offset_note_idx[0], 1] = onset_time_index
+
+    return notes

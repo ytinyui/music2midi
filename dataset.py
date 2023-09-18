@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 import numpy as np
 from layer.input import LogMelSpectrogram
-from midi_tokenizer import MidiTokenizer
+from midi_tokenizer import MidiTokenizerNoVelocity
 from transformers import T5Config
 from torch.nn.utils.rnn import pad_sequence
 
@@ -56,7 +56,7 @@ class PopDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.spectrogram = LogMelSpectrogram()
-        self.tokenizer = MidiTokenizer(self.config.tokenizer)
+        self.tokenizer = MidiTokenizerNoVelocity(self.config.tokenizer)
 
         self.audio_paths = [
             (self.data_dir / song_id).glob("*.pitchshift.wav").__next__()
@@ -106,9 +106,7 @@ class PopDataset(Dataset):
 
         # x.shape = (length, feat_dim)
         x = self.spectrogram(waveform).transpose(-1, -2)
-        tokens = self.tokenizer.notes_to_relative_tokens(
-            notes_segment, offset_idx=start_idx, add_eos=True
-        )
+        tokens = self.tokenizer(notes_segment, offset_idx=start_idx, add_eos=True)
         y = torch.from_numpy(tokens)
 
         return x, y, composer_id
