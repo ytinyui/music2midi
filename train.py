@@ -18,9 +18,5 @@ if __name__ == "__main__":
 
     pop_dataset = PopDataModule(args.data_dir, args.config)
     model = TransformerWrapper(args.config)
-    model = model.load_from_checkpoint(
-        "lightning_logs/version_0/checkpoints/epoch=1279-step=172800.ckpt",
-        config_path=args.config,
-    )
     trainer = pl.Trainer(**model.config.trainer)
     trainer.fit(model, pop_dataset)

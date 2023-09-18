@@ -4,7 +4,31 @@ dataset:
   input_length: 1024
   n_bars: 2
   sample_rate: 22050
+composer_ids:
+  DooPiano: 0
+  freestyle pianoman: 1
+  PHianonize: 2
+  HANPPYEOM한뼘피아노: 3
+  The Theorist: 4
+  Pair Piano: 5
+  Jova Musique - Pianella Piano: 6
+  Sangeo of Music: 7
+  PineappleChord: 8
+  Piano in U: 9
+  Giwon Piano: 10
+  Joyce Leong: 11
+  Montechait: 12
+  aldy32: 13
+  Katherine Cordova: 14
+  YourPianoCover: 15
+  Riyandi Kusuma: 16
+  PianoX: 17
+  Flow Music Piano: 18
+  Piano Hug: 19
+  Pianella Piano: 20
 t5:
+  num_layers: 6
+  num_decoder_layers: 6
   feed_forward_proj: gated-gelu
   tie_word_embeddings: false
   tie_encoder_decoder: false
@@ -18,10 +42,9 @@ tokenizer:
     velocity: 2
     time: 100
 trainer:
-  max_epochs: 5000
+  max_epochs: 8000
   accumulate_grad_batches: 1
-  check_val_every_n_epoch: 20
-  gradient_clip_val: 3.0
+  check_val_every_n_epoch: 10
 dataloader:
   batch_size: 32
   num_workers: 4

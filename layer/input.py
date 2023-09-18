@@ -26,7 +26,7 @@ class LogMelSpectrogram(nn.Module):
 
 
 class MelConditioner(nn.Module):
-    def __init__(self, n_vocab, n_dim) -> None:
+    def __init__(self, n_vocab, n_dim=512) -> None:
         super().__init__()
         self.embedding = nn.Embedding(num_embeddings=n_vocab, embedding_dim=n_dim)
 
