@@ -1,3 +1,4 @@
+from __future__ import annotations
 import numpy as np
 from numba import njit
 import pretty_midi
@@ -6,6 +7,16 @@ from omegaconf import DictConfig
 
 PAD = 0
 EOS = 1
+
+
+def get_tokenizer(config) -> MidiTokenizerNoVelocity | MidiTokenizer:
+    """
+    Use this function to get the tokenizer.
+    """
+    if config.no_velocity == True:
+        return MidiTokenizerNoVelocity(config, default_velocity=77)
+    else:
+        return MidiTokenizer(config)
 
 
 class TokenizerBase:
@@ -198,7 +209,10 @@ class MidiTokenizer(TokenizerBase):
             if token == EOS:
                 break
             if token >= self.time_offset:
-                cur_time += token - self.time_offset
+                if self.config.relative_time_steps:
+                    cur_time += token - self.time_offset
+                else:
+                    cur_time = token - self.time_offset
                 cur_velocity = -1
                 cur_note = -1
             elif token >= self.velocity_offset:
@@ -257,7 +271,10 @@ class MidiTokenizerNoVelocity(TokenizerBase):
             if token == EOS:
                 break
             if token >= self.time_offset:
-                cur_time += token - self.time_offset
+                if self.config.relative_time_steps:
+                    cur_time += token - self.time_offset
+                else:
+                    cur_time = token - self.time_offset
                 cur_velocity = -1
                 cur_note = -1
             elif token >= self.velocity_offset:

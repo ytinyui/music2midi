@@ -42,6 +42,8 @@ tokenizer:
     pitch: 128
     velocity: 128
     time: 100
+  no_velocity: True
+  default_velocity: 77
   relative_time_steps: False
 trainer:
   max_epochs: 8000
