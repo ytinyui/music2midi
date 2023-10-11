@@ -4,6 +4,8 @@ dataset:
   input_length: 1024
   n_bars: 2
   sample_rate: 22050
+  sync_feature_rate: 50
+  midi_quantize_ms: 50
 composer_ids:
   DooPiano: 0
   freestyle pianoman: 1
