@@ -5,11 +5,11 @@ from pathlib import Path
 from subprocess import PIPE, Popen
 
 """
-!Important: Use subprocess.run() to run this in Jupyter Notebook.
+!Important: Use subprocess.run() to run this if using Jupyter Notebook.
 """
 
 
-def run(url, output_dir: str = ".") -> int:
+def main(url: str, output_dir: str = ".") -> int:
     os.makedirs(output_dir, exist_ok=True)
     # Open a subprocess to run the command
     process = Popen(
@@ -43,4 +43,4 @@ if __name__ == "__main__":
     parser.add_argument("url", default=None)
     parser.add_argument("--output_dir", default=".")
     args = parser.parse_args()
-    run(args.url, args.output_dir)
+    main(args.url, args.output_dir)
