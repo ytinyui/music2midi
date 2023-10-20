@@ -126,7 +126,7 @@ class MyDataset(Dataset):
         difficulty_id = self.difficulty_ids[index]
 
         audio_path = self.audio_paths[index]
-        audio_duration = librosa.get_duration(path=audio_path)
+        audio_duration = librosa.get_duration(filename=audio_path)
         start_time = np.random.choice(
             np.arange(0, audio_duration - duration, self.tokenizer.time_step)
         )
