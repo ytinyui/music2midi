@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, Union
 
 import librosa
 import more_itertools
@@ -36,7 +37,11 @@ class TransformerWrapper(pl.LightningModule):
         n_genre = len(self.config.genre_id.keys())
         n_difficulty = len(self.config.difficulty_id.keys())
         self.mel_conditioner = MelConditioner(n_genre, n_difficulty)
-        self.spectrogram = LogMelSpectrogram(self.config.dataset.sample_rate)
+        self.spectrogram = LogMelSpectrogram(
+            sample_rate=self.config.dataset.sample_rate,
+            n_mels=self.t5config.d_model,
+            **self.config.spectrogram,
+        )
 
     def setup(self, stage=None):
         now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -96,20 +101,17 @@ class TransformerWrapper(pl.LightningModule):
     @torch.no_grad()
     def generate(
         self,
-        audio_path: str,
+        audio_path: Union[str, Path],
         genre_id: int = 0,
         difficulty_id: int = 0,
-        model_name="generated",
-        show_plot=False,
-        save_midi=False,
-        save_mix=False,
-        midi_path=None,
-        mix_path=None,
-    ):
-        audio_y, sr = librosa.load(audio_path, sr=self.config.dataset.sample_rate)
+        midi_path: Optional[Union[str, Path]] = None,
+        mix_path: Optional[Union[str, Path]] = None,
+        show_plot: bool = False,
+    ) -> pretty_midi.PrettyMIDI:
+        audio_y, sr = librosa.load(str(audio_path), sr=self.config.dataset.sample_rate)
         waveform = torch.from_numpy(audio_y).to(self.device)
         duration_per_batch = self.config.dataset.segment_duration
-        relative_tokens = self.sample_relative_tokens(
+        tokens = self.sample_tokens(
             waveform,
             sr,
             duration_per_batch,
@@ -117,11 +119,11 @@ class TransformerWrapper(pl.LightningModule):
             difficulty_id=difficulty_id,
         )
         numpy_notes = self.tokenizer.batch_decode(
-            relative_tokens, duration_per_batch=duration_per_batch
+            tokens, duration_per_batch=duration_per_batch
         )
         midi_data = notes_to_midi(numpy_notes)
 
-        if show_plot or save_mix:
+        if show_plot or mix_path is not None:
             pm_y = midi_data.fluidsynth(sr)
             stereo = to_stereo(audio_y, pm_y)
 
@@ -135,31 +137,20 @@ class TransformerWrapper(pl.LightningModule):
             display("Original Song", ipd.Audio(audio_y, rate=sr))
             display(note_seq.plot_sequence(note_seq.midi_to_note_sequence(midi_data)))
 
-        mix_path = (
-            f"{Path(audio_path).stem}_{model_name}_mix.wav"
-            if mix_path is None
-            else mix_path
-        )
-        if save_mix:
+        if mix_path is not None:
             sf.write(
-                file=mix_path,
+                file=str(mix_path),
                 data=stereo.T,
                 samplerate=sr,
                 format="wav",
             )
-
-        midi_path = (
-            f"{Path(audio_path).stem}_{model_name}.mid"
-            if midi_path is None
-            else midi_path
-        )
-        if save_midi:
-            midi_data.write(midi_path)
+        if midi_path is not None:
+            midi_data.write(str(midi_path))
 
         return midi_data
 
     @torch.no_grad()
-    def sample_relative_tokens(
+    def sample_tokens(
         self,
         waveform: torch.Tensor,
         sr: int,
@@ -169,26 +160,30 @@ class TransformerWrapper(pl.LightningModule):
     ) -> np.ndarray:
         input_batch = torch.split(waveform, sr * duration_per_batch)
 
-        relative_tokens_list = []
+        tokens_list = []
         for batch in more_itertools.chunked(
             input_batch, self.config.inference.batch_size
         ):
             batch_size = len(batch)
-            genre_ids = torch.zeros(batch_size).long() + genre_id
-            difficulty_ids = torch.zeros(batch_size).long() + difficulty_id
-
             inputs_embeds = pad_sequence(batch, batch_first=True, padding_value=PAD)
-            inputs_embeds = self.spectrogram(batch).transpose(-1, -2)
+            genre_ids = torch.zeros((batch_size, 1)).long() + genre_id
+            difficulty_ids = torch.zeros((batch_size, 1)).long() + difficulty_id
+
+            inputs_embeds = inputs_embeds.to(self.device)
+            genre_ids = genre_ids.to(self.device)
+            difficulty_ids = difficulty_ids.to(self.device)
+
+            inputs_embeds = self.spectrogram(inputs_embeds).transpose(-1, -2)
             inputs_embeds = self.mel_conditioner(
                 inputs_embeds, genre_ids, difficulty_ids
             )
-            relative_tokens = self.t5model.generate(
+            tokens = self.t5model.generate(
                 inputs_embeds=inputs_embeds,
                 max_length=256,
             )
-            relative_tokens_list += [*relative_tokens.cpu().numpy()]
+            tokens_list += [*tokens.cpu().numpy()]
 
-        return relative_tokens_list
+        return tokens_list
 
 
 def notes_to_midi(notes: np.ndarray):
