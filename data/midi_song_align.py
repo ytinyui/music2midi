@@ -238,13 +238,13 @@ def main(
     wp_s = wp.T / feature_rate
 
     midi_aligned = simple_adjust_times(midi_data, wp_s[:, 1], wp_s[:, 0])
-    time_diff_std = np.std(wp_s[:, 0] - wp_s[:, 1])
+    dtw_std = np.std(wp_s[:, 0] - wp_s[:, 1])
 
     midi_aligned.write(str(midi_output_path))
     meta.score.num_tracks = len(midi_data.instruments)
     meta.youtube.duration = librosa.get_duration(y=song_audio, sr=sr)
     meta.metrics = OmegaConf.create()
-    meta.metrics.time_diff_std = float(time_diff_std)
+    meta.metrics.dtw_std = float(dtw_std)
     meta.metrics.opt_chroma_shift = int(opt_chroma_shift)
     OmegaConf.save(meta, meta_path)
 
