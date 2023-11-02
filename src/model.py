@@ -15,10 +15,10 @@ from transformers import T5Config, T5ForConditionalGeneration
 from transformers.optimization import Adafactor, AdafactorSchedule
 
 import wandb
-from dataset import PAD, InputDataTuple
-from layer.input import LogMelSpectrogram, MelConditioner
-from midi_tokenizer import TokenizerFactory
-from utils.dsp import to_stereo
+from .dataset import PAD, InputDataTuple
+from .input import LogMelSpectrogram, MelConditioner
+from .midi_tokenizer import TokenizerFactory
+from .dsp import to_stereo
 
 
 class TransformerWrapper(pl.LightningModule):
