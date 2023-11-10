@@ -17,7 +17,7 @@ from transformers.optimization import Adafactor, AdafactorSchedule
 import wandb
 from .dataset import PAD, InputDataTuple
 from .input import LogMelSpectrogram, MelConditioner
-from .midi_tokenizer import TokenizerFactory
+from .tokenizer import TokenizerFactory
 from .dsp import to_stereo
 
 
