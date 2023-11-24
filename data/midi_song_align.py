@@ -5,10 +5,8 @@ import multiprocessing
 import warnings
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import NamedTuple
 
 import librosa
-import mido
 import numpy as np
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
@@ -30,72 +28,6 @@ from synctoolbox.feature.pitch_onset import audio_to_pitch_onset_features
 from tqdm import tqdm
 
 warnings.filterwarnings(action="ignore")
-
-
-class TempoEvent(NamedTuple):
-    time: float
-    bpm: float
-    tick: int
-    tick_diff: int
-
-
-def get_bpm(midi_file: mido.MidiFile) -> list[TempoEvent]:
-    tempo_old = 500_000  # default tempo
-    time_sig = None
-    tick = 0
-
-    for message in midi_file.merged_track:
-        tick += message.time
-
-        if message.type == "time_signature":
-            time_sig = (message.numerator, message.denominator)
-            # add default set_tempo event in case the midi file has no set_tempo events
-            if tick == 0:
-                ret = [
-                    TempoEvent(
-                        time=0,
-                        bpm=mido.tempo2bpm(tempo_old, time_sig),
-                        tick=0,
-                        tick_diff=0,
-                    )
-                ]
-
-        elif message.type in ["set_tempo", "end_of_track"]:
-            tick_diff = tick - ret[-1].tick
-            time_offset = ret[-1].time
-            tempo_new = message.tempo if message.type == "set_tempo" else tempo_old
-            ret.append(
-                TempoEvent(
-                    time=mido.tick2second(
-                        tick_diff, midi_file.ticks_per_beat, tempo_old
-                    )
-                    + time_offset,
-                    bpm=mido.tempo2bpm(tempo_new, time_sig),
-                    tick=tick,
-                    tick_diff=tick_diff,
-                )
-            )
-            tempo_old = tempo_new
-    # remove default set_tempo event
-    return ret[1:] if len(ret) > 2 else ret
-
-
-def get_beat_times(tempo_event_list: list[TempoEvent]) -> np.ndarray:
-    beat_times = []
-    for i in range(1, len(tempo_event_list)):
-        start = tempo_event_list[i - 1].time
-        step = 60 / tempo_event_list[i - 1].bpm
-        end = (
-            tempo_event_list[i].time
-            if i < len(tempo_event_list) - 1
-            else tempo_event_list[-1].time + step
-        )
-        beat_times.append(np.arange(start, end, step))
-
-    ret = np.concatenate(beat_times)
-    # remove redundant beat times due to floating point precision
-    # prepend dummy "-1" to match array length after np.diff()
-    return ret[np.diff(ret, prepend=-1) > 1e-4]
 
 
 def simple_adjust_times(
@@ -289,10 +221,6 @@ def main(
         print(f"{song_path.name} file not found")
         return
 
-    midi_data_mido = mido.MidiFile(midi_path)
-    tempo_event_list = get_bpm(midi_data_mido)
-    beat_times = get_beat_times(tempo_event_list)
-
     song_audio, sr = librosa.load(str(song_path), sr=sr)
     song_audio = librosa.util.normalize(song_audio)
     midi_data = PrettyMIDI(str(midi_path))
@@ -308,6 +236,7 @@ def main(
         )
 
     midi_aligned = simple_adjust_times(midi_data, wp[1], wp[0])
+    beat_times = midi_data.get_beats()
     beat_times_aligned = np.interp(beat_times, wp[1], wp[0])
 
     midi_aligned.write(str(midi_output_path))
