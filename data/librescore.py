@@ -1,41 +1,33 @@
 import argparse
 import os
-import time
-from pathlib import Path
-from subprocess import PIPE, Popen
-
-"""
-!Important: Use subprocess.run() to run this if using Jupyter Notebook.
-"""
+import subprocess
 
 
 def main(url: str, output_dir: str = ".") -> int:
     os.makedirs(output_dir, exist_ok=True)
-    # Open a subprocess to run the command
-    process = Popen(
+    # open a subprocess to run the command
+    process = subprocess.Popen(
         ["npx", "dl-librescore@latest"],
-        stdin=PIPE,
-        stdout=PIPE,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
         text=True,
         cwd=output_dir,
     )
     process.stdin.write(url + "\n")
     process.stdin.flush()
-    # Continue
     for line in iter(process.stdout.readline, ""):
         print(line.strip())
-        if "Title:" in line:
-            # Confirm title
+        if "Title:" in line:  # confirm title
             process.stdin.write("\n")
             process.stdin.flush()
 
-        if "Filetype Selection" in line:
-            # Select midi
+        if "Filetype Selection" in line:  # select midi
             process.stdin.write(" \b\n")
             process.stdin.flush()
 
-        if "Done" in line:
-            return process.wait()
+        if "Output Directory:" in line:  # success
+            return process.wait(5)
+    raise FileNotFoundError("Score not found")
 
 
 if __name__ == "__main__":

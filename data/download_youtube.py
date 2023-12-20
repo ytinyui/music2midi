@@ -149,7 +149,7 @@ if __name__ == "__main__":
     config = OmegaConf.load("config.yaml")
     sample_rate = config.dataset.sample_rate
 
-    Parallel(n_jobs=args.n_jobs, backend="threading")(
+    Parallel(n_jobs=args.n_jobs, backend="multiprocessing")(
         delayed(main)(
             csv_path,
             data_dir,
