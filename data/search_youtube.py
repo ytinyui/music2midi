@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 def valid_title(meta: DictConfig) -> bool:
     for title in [meta.score.title, meta.song.title]:
-        for word in ["misc", "medley", "mashup", "mashups", "guess"]:
+        for word in ["misc", "medley", "mashup", "mash-up", "mashups", "guess"]:
             if re.search(rf"\b{word}\b", title, re.IGNORECASE):
                 return False
     return True
@@ -49,6 +49,9 @@ def search_youtube(
     score_duration = meta.score.duration
 
     output_csv = output_dir / (score_id + ".csv")
+    if output_csv.exists():
+        print(f"{output_csv} already exists")
+        return
     with output_csv.open("w") as f:
         f.write(
             "score_id,yt_id,search_key,yt_title,score_duration,yt_duration,yt_view_count\n"
@@ -59,7 +62,7 @@ def search_youtube(
         score_duration: int = score_duration,
     ) -> Union[str, None]:
         """
-        return str: filtered
+        return str: discarded
         return None: accepted
         """
         if (duration := info.get("duration")) is None:
