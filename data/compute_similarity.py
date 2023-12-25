@@ -68,15 +68,19 @@ def main(
 ):
     score_id = song_path.stem
     midi_path = os.path.join(data_dir, "midi_aligned", score_id + ".mid")
+    output_path = os.path.join(data_dir, "similarity", score_id + ".npz")
+    if output_path.exists():
+        print(f"{output_path} already exists")
+        return
     if not song_path.exists():
-        print(f"{song_path.name} file not found")
+        print(f"{song_path} file not found")
         return
     if not os.path.exists(midi_path):
-        print(f"{os.path.basename(midi_path)} file not found")
+        print(f"{midi_path} file not found")
         return
 
     song_audio, sr = librosa.load(str(song_path), sr=sr)
-    midi_data = PrettyMIDI(midi_path)
+    midi_data = PrettyMIDI(str(midi_path))
     midi_synth = midi_data.fluidsynth(fs=sr)
     song_audio, midi_synth = pad_audio(song_audio, midi_synth)
 
@@ -96,7 +100,7 @@ def main(
     )
 
     np.savez(
-        os.path.join(data_dir, "similarity", score_id + ".npz"),
+        output_path,
         chroma_cqt=SM_chroma_cqt,
         tempogram=SM_tempogram,
     )
