@@ -62,11 +62,6 @@ class MyDataModule(pl.LightningDataModule):
             self.dataset_split_ids.get("val_id"),
             self.config_path,
         )
-        self.test_set = MyDataset(
-            self.data_dir,
-            self.dataset_split_ids.get("test_id"),
-            self.config_path,
-        )
 
     def train_dataloader(self):
         return DataLoader(
@@ -79,14 +74,6 @@ class MyDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_set,
-            shuffle=False,
-            collate_fn=collate_fn,
-            **self.config.dataloader,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_set,
             shuffle=False,
             collate_fn=collate_fn,
             **self.config.dataloader,
