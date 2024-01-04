@@ -1,6 +1,5 @@
 import argparse
 import multiprocessing
-import os
 from pathlib import Path
 from typing import Callable
 
@@ -67,15 +66,15 @@ def main(
     chunk_size: int = 45,
 ):
     score_id = song_path.stem
-    midi_path = os.path.join(data_dir, "midi_aligned", score_id + ".mid")
-    output_path = os.path.join(data_dir, "similarity", score_id + ".npz")
+    midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
+    output_path = data_dir / "similarity" / f"{score_id}.npz"
     if output_path.exists():
         print(f"{output_path} already exists")
         return
     if not song_path.exists():
         print(f"{song_path} file not found")
         return
-    if not os.path.exists(midi_path):
+    if not midi_path.exists():
         print(f"{midi_path} file not found")
         return
 
@@ -113,7 +112,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
-    os.makedirs(data_dir / "similarity", exist_ok=True)
+    (data_dir / "similarity").mkdir(exist_ok=True)
     config = OmegaConf.load(args.config)
     sr = config.dataset.sample_rate
 
