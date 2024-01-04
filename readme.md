@@ -36,7 +36,6 @@ python data/remove_invalid_midi.py [data_dir]
 ```
 
 Search and download audio from YouTube
-Note: duration in meta.youtube.duration may not be accurate from youtube (because sponsorblock may cut some sections)
 
 ```bash
 python data/search_youtube.py [data_dir]
@@ -44,9 +43,17 @@ python data/download_youtube.py [data_dir]
 ```
 
 Compute warp path (align MIDI with audio)
+Note: the output (synchronized) MIDI score will be transposed to match the key of the audio (if needed)
 
 ```bash
 python data/midi_song_align.py [data_dir]
+```
+
+Convert midi file to numpy array
+
+```bash
+python data/midi_to_numpy.py [data_dir]
+python data/quantize_midi.py [data_dir]
 ```
 
 Compute metrics, filter and split dataset
