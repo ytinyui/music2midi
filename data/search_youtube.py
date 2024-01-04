@@ -50,10 +50,10 @@ def search_youtube(
     quiet: bool = True,
 ) -> None:
     search_key = get_search_key(meta, word_blacklist)
-    score_id = str(meta.score.id)
+    score_id = meta.score.id
     score_duration = meta.score.duration
 
-    output_csv = output_dir / (score_id + ".csv")
+    output_csv = output_dir / f"{score_id}.csv"
     if output_csv.exists():
         print(f"{output_csv} already exists")
         return

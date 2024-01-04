@@ -19,11 +19,11 @@ def main(
     output_mono: bool = True,
 ):
     score_id = song_path.stem
-    midi_path = data_dir / "midi_aligned" / (score_id + ".mid")
+    midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
     if not midi_path.exists():
         print(f"{midi_path.name} file not found")
         return
-    mix_path = data_dir / "audio_mix" / (score_id + ".mp3")
+    mix_path = data_dir / "audio_mix" / f"{score_id}.mp3"
     midi_data = PrettyMIDI(str(midi_path))
     midi_synth = midi_data.fluidsynth(fs=sr)
 
