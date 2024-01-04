@@ -143,6 +143,50 @@ def get_features_from_audio(audio, tuning_offset, Fs, feature_rate, visualize=Fa
     return f_chroma_quantized, f_DLNCO
 
 
+def transpose_midi(midi_data: PrettyMIDI, shift: int) -> PrettyMIDI:
+    for instrument in midi_data.instruments:
+        instrument.notes = [copy.deepcopy(note) for note in instrument.notes]
+        for note in instrument.notes:
+            note.pitch += shift
+    return midi_data
+
+
+def compute_optimal_chroma_shift_wrapper(
+    song_audio: np.ndarray, piano_audio: np.ndarray, sr: int, feature_rate: int
+) -> int:
+    """
+    wrapper function for compute_optimal_chroma_shift
+
+    if return != 0, the audio inputs are not in the same key
+    """
+    tuning_offset_song = librosa.estimate_tuning(y=song_audio, sr=sr) * 100
+    tuning_offset_piano = librosa.estimate_tuning(y=piano_audio, sr=sr) * 100
+
+    f_chroma_quantized_song, f_DLNCO_song = get_features_from_audio(
+        song_audio,
+        tuning_offset_song,
+        Fs=sr,
+        feature_rate=feature_rate,
+        visualize=False,
+    )
+    f_chroma_quantized_piano, f_DLNCO_piano = get_features_from_audio(
+        piano_audio,
+        tuning_offset_piano,
+        Fs=sr,
+        feature_rate=feature_rate,
+        visualize=False,
+    )
+
+    f_cens_1hz_song = quantized_chroma_to_CENS(
+        f_chroma_quantized_song, 201, 50, feature_rate
+    )[0]
+    f_cens_1hz_piano = quantized_chroma_to_CENS(
+        f_chroma_quantized_piano, 201, 50, feature_rate
+    )[0]
+    opt_chroma_shift = compute_optimal_chroma_shift(f_cens_1hz_song, f_cens_1hz_piano)
+    return opt_chroma_shift
+
+
 def get_audio_wp(
     song_audio: np.ndarray,
     piano_audio: np.ndarray,
@@ -211,12 +255,12 @@ def main(
     feature_rate: int,
 ):
     meta = OmegaConf.load(meta_path)
-    score_id = str(meta.score.id)
-    song_path = data_dir / "audio" / (score_id + ".wav")
-    midi_path = data_dir / "midi" / (score_id + ".mid")
-    midi_output_path = data_dir / "midi_aligned" / (score_id + ".mid")
-    wp_path = data_dir / "warp_path" / (score_id + ".npy")
-    beat_times_path = data_dir / "beat_times" / (score_id + ".npy")
+    score_id = meta.score.id
+    song_path = data_dir / "audio" / f"{score_id}.wav"
+    midi_path = data_dir / "midi" / f"{score_id}.mid"
+    midi_output_path = data_dir / "midi_aligned" / f"{score_id}.mid"
+    wp_path = data_dir / "warp_path" / f"{score_id}.npy"
+    beat_times_path = data_dir / "beat_times" / f"{score_id}.npy"
     if wp_path.exists():
         print(f"{wp_path} already exists")
         return
@@ -231,6 +275,19 @@ def main(
     midi_audio = librosa.util.normalize(midi_audio)
 
     with redirect_stdout(io.StringIO()):
+        opt_chroma_shift = compute_optimal_chroma_shift_wrapper(
+            song_audio, midi_audio, sr, feature_rate
+        )
+        if opt_chroma_shift != 0:
+            shift = (
+                opt_chroma_shift
+                if opt_chroma_shift <= abs(opt_chroma_shift - 12)
+                else opt_chroma_shift - 12
+            )
+            midi_data = transpose_midi(midi_data, shift)
+            midi_audio = midi_data.fluidsynth(fs=sr)
+            midi_audio = librosa.util.normalize(midi_audio)
+
         wp, opt_chroma_shift = get_audio_wp(
             song_audio,
             midi_audio,
