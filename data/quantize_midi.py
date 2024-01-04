@@ -62,6 +62,7 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
     numpy_notes_quantized = np.stack(
         [onset_time_indices, offset_time_indices, numpy_notes[:, 2], numpy_notes[:, 3]],
     ).T
+    numpy_notes_quantized = np.int_(numpy_notes_quantized)
     # min length of each note is 1 step
     numpy_notes_quantized[:, 1] = np.maximum(
         numpy_notes_quantized[:, 1], numpy_notes_quantized[:, 0] + 1
