@@ -109,11 +109,12 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_dir", type=str, default=None)
+    parser.add_argument("--config", type=str, default="config.yaml")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
     os.makedirs(data_dir / "similarity", exist_ok=True)
-    config = OmegaConf.load("config.yaml")
+    config = OmegaConf.load(args.config)
     sr = config.dataset.sample_rate
 
     Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
