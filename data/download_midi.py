@@ -183,12 +183,8 @@ if __name__ == "__main__":
         with log_file.open("r") as f:
             progress = json.load(f)
     else:
-        tmp_dict = {}
-        for difficulty in config.code.difficulty.keys():
-            tmp_dict[difficulty] = 1
-        progress = {}
-        for genre in config.code.genre.keys():
-            progress[genre] = copy.copy(tmp_dict)
+        tmp_dict = {difficulty: 1 for difficulty in config.code.difficulty.keys()}
+        progress = {genre: copy.copy(tmp_dict) for genre in config.code.genre.keys()}
         with log_file.open("w") as f:
             json.dump(progress, f, indent=2)
 

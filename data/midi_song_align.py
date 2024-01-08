@@ -265,7 +265,7 @@ def main(
         print(f"{wp_path} already exists")
         return
     if not song_path.exists():
-        print(f"{song_path.name} file not found")
+        print(f"{song_path} file not found")
         return
 
     song_audio, sr = librosa.load(str(song_path), sr=sr)
@@ -321,7 +321,7 @@ if __name__ == "__main__":
     (data_dir / "beat_times").mkdir(exist_ok=True)
     config = OmegaConf.load(args.config)
     sr = config.dataset.sample_rate
-    feature_rate = config.dataset.sync_feature_rate
+    feature_rate = config.dataset.dtw_feature_rate
 
     Parallel(n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing")(
         delayed(main)(
