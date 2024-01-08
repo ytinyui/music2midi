@@ -41,9 +41,10 @@ if __name__ == "__main__":
     )
     df_filtered = df[
         (df["norm_wp_std"] < 0.05)
+        & (df["beat_times_fluctuation_median"] < 0.1)
         & (df["chroma_min_similarity"] > 0.2)
         & (df["tempogram_min_similarity"] > 0.2)
-        & (df["note_density"] < 50)
+        & (df["note_density"] < 40)
     ]
 
     dataset_ids = df_filtered["score_id"].to_numpy()
@@ -53,6 +54,6 @@ if __name__ == "__main__":
     np.savez(
         data_dir / "dataset_split.npz",
         train_id=train_ids,
-        # val_id=val_ids,
+        val_id=val_ids,
         test_id=test_ids,
     )
