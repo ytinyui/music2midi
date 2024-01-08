@@ -37,7 +37,7 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
     score_id = meta.score.id
     beat_times_path = data_dir / "beat_times" / f"{score_id}.npy"
     if not beat_times_path.exists():
-        print(f"{beat_times_path.name} file not found")
+        print(f"{beat_times_path} file not found")
         return
 
     beat_times = np.load(beat_times_path)
@@ -68,6 +68,9 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
     numpy_notes_quantized[:, 1] = np.maximum(
         numpy_notes_quantized[:, 1], numpy_notes_quantized[:, 0] + 1
     )
+    # fix index if note offset time > audio duration
+    index = np.where(numpy_notes_quantized[:, 1] == len(beat_times_interpolated))
+    numpy_notes_quantized[index, :2] -= 1
     np.save(
         data_dir / "midi_quantized_numpy" / f"{score_id}.npy", numpy_notes_quantized
     )
