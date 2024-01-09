@@ -57,11 +57,13 @@ if __name__ == "__main__":
     parser.add_argument("data_dir", type=str)
     parser.add_argument("ckpt_path", type=str)
     parser.add_argument("--config", type=str, default="config.yaml")
+    parser.add_argument("--name", type=str, default="M2M")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
     split = np.load(data_dir / "dataset_split.npz", allow_pickle=True)
     test_ids = split.get("test_id")
+    model_name = args.name
 
     config = OmegaConf.load(args.config)
     model = TransformerWrapper.load_from_checkpoint(
@@ -91,9 +93,9 @@ if __name__ == "__main__":
             continue
 
         result = evaluate(label_midi, output_midi)
-        logs.append([score_id, "M2M-32M", genre, difficulty, result])
+        logs.append([score_id, model_name, genre, difficulty, result])
 
     df = pd.DataFrame(
         logs, columns=["score_id", "model", "genre", "difficulty", "score"]
     )
-    df.to_csv("scores.csv", index=False)
+    df.to_csv(f"score-{model_name}.csv", index=False)
