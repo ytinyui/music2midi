@@ -1,8 +1,10 @@
-project: pop2piano
 dataset:
   sample_rate: 22050
-  sync_feature_rate: 50
+  dtw_feature_rate: 50
+  quantize_sub_beats: 4
   segment_duration: 3
+  max_num_tokens_per_second: 100
+  max_beat_times_fluctuation: 0.3
 spectrogram:
   n_fft: 4096
   hop_length: 1024
@@ -24,16 +26,20 @@ tokenizer:
     pitch: 128
     velocity: 128
     time: 200
-  no_velocity: True
   default_velocity: 77
 trainer:
-  max_epochs: 500
+  max_epochs: 800
   accumulate_grad_batches: 1
+early_stopping:
+  monitor: val_loss
+  mode: min
+  min_delta: 0.05
+  patience: 10
 dataloader:
-  batch_size: 16
+  batch_size: 32
   num_workers: 4
 inference:
-  batch_size: 64
+  batch_size: 128
 genre_id:
   electronic: 0
   pop: 1
