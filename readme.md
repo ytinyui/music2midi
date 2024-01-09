@@ -42,6 +42,13 @@ python data/search_youtube.py [data_dir]
 python data/download_youtube.py [data_dir]
 ```
 
+Run this shell script or run the python scripts below manually
+
+```bash
+chmod +x preprocess.sh
+./preprocess.sh [data_dir]
+```
+
 Compute warp path (align MIDI with audio)
 Note: the output (synchronized) MIDI score will be transposed to match the key of the audio (if needed)
 
