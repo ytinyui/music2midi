@@ -94,7 +94,8 @@ def get_beat_times(tempo_event_list: list[TempoEvent]) -> np.ndarray:
 
     ret = np.concatenate(beat_times)
     # remove redundant beat times due to floating point precision
-    return ret[np.diff(ret, prepend=1) > 1e-4]
+    # prepend dummy "-1" to match array length after np.diff()
+    return ret[np.diff(ret, prepend=-1) > 1e-4]
 
 
 def simple_adjust_times(
