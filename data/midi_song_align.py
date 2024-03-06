@@ -235,10 +235,10 @@ def main(
             sr=sr,
             feature_rate=feature_rate,
         )
-    wp_s = wp.T / feature_rate
+    wp_s = wp / feature_rate
 
-    midi_aligned = simple_adjust_times(midi_data, wp_s[:, 1], wp_s[:, 0])
-    dtw_std = np.std(wp_s[:, 0] - wp_s[:, 1])
+    midi_aligned = simple_adjust_times(midi_data, wp_s[1], wp_s[0])
+    dtw_std = np.std(wp_s[0] - wp_s[1])
 
     midi_aligned.write(str(midi_output_path))
     meta.score.num_tracks = len(midi_data.instruments)
