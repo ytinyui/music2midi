@@ -28,11 +28,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
+    config = OmegaConf.load("config.yaml")
+    threshold = config.dataset.filter_threshold
     meta_list = [
         meta
         for meta_path in data_dir.glob("metadata/*.yaml")
         if (meta := OmegaConf.load(meta_path)).get("youtube") is not None
         and meta.metrics.opt_chroma_shift == 0
+        and meta.score.num_tracks == 2
     ]
     metrics = [*meta_list[0].metrics.keys()]
     df = pd.DataFrame(
@@ -40,11 +43,14 @@ if __name__ == "__main__":
         columns=["score_id"] + metrics,
     )
     df_filtered = df[
-        (df["norm_wp_std"] < 0.05)
-        & (df["beat_times_fluctuation_median"] < 0.1)
-        & (df["chroma_min_similarity"] > 0.2)
-        & (df["tempogram_min_similarity"] > 0.2)
-        & (df["note_density"] < 40)
+        (df["norm_wp_std"] < threshold["norm_wp_std"])
+        & (
+            df["beat_times_fluctuation_median"]
+            < threshold["beat_times_fluctuation_median"]
+        )
+        & (df["chroma_min_similarity"] > threshold["chroma_min_similarity"])
+        & (df["tempogram_min_similarity"] > threshold["tempogram_min_similarity"])
+        & (df["note_density"] < threshold["note_density"])
     ]
 
     dataset_ids = df_filtered["score_id"].to_numpy()

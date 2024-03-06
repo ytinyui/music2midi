@@ -1,16 +1,25 @@
 dataset:
-  sample_rate: 22050
+  sample_rate: 16000
   dtw_feature_rate: 50
-  quantize_sub_beats: 4
+  quantize_sub_beats: 0
   segment_duration: 3
+  segment_num_sub_beats: 16
+  invalid_notes_threshold: 0.2
   max_num_tokens_per_second: 100
   max_beat_times_fluctuation: 0.3
+  filter_threshold:
+    norm_wp_std: 0.03
+    beat_times_fluctuation_median: 0.05
+    chroma_min_similarity: 0.6
+    tempogram_min_similarity: 0.6
+    note_density: 40
 spectrogram:
-  n_fft: 4096
+  n_fft: 2048
   hop_length: 1024
   f_min: 10.0
 t5:
   num_layers: 6
+  d_model: 256
   d_ff: 1024
   feed_forward_proj: gated-gelu
   tie_word_embeddings: false
@@ -21,10 +30,8 @@ t5:
 tokenizer:
   midi_quantize_ms: 100
   vocab_size:
-    special: 2
-    reserved: 8
+    special: 4
     pitch: 128
-    velocity: 128
     time: 200
   default_velocity: 77
 trainer:
@@ -34,7 +41,7 @@ early_stopping:
   monitor: val_loss
   mode: min
   min_delta: 0.05
-  patience: 10
+  patience: 50
 dataloader:
   batch_size: 32
   num_workers: 4

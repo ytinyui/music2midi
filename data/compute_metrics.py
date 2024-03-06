@@ -26,16 +26,11 @@ def compute_metrics(
 
     # load data
     warp_path = np.load(data_dir / "warp_path" / f"{score_id}.npy")
-    beat_times = np.load(data_dir / "beat_times" / f"{score_id}.npy")
+    beat_times = np.load(data_dir / "beat_times_aligned" / f"{score_id}.npy")
     SM = np.load(data_dir / "similarity" / f"{score_id}.npz")
-    chroma_trace = np.convolve(
-        SM.get("chroma_cqt"), np.ones(conv_window_size) / conv_window_size, mode="valid"
-    )
-    tempogram_trace = np.convolve(
-        SM.get("tempogram"), np.ones(conv_window_size) / conv_window_size, mode="valid"
-    )
+    chroma_trace = SM.get("chroma_cqt")
+    tempogram_trace = SM.get("tempogram")
     midi_numpy = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
-    beat_times = np.load(data_dir / "beat_times" / f"{score_id}.npy")
     # Compute metrics
     wp_std = np.std(warp_path[0] - warp_path[1])
     norm_wp_std = wp_std / duration
