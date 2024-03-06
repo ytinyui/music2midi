@@ -11,7 +11,7 @@ from omegaconf import OmegaConf
 from pretty_midi import PrettyMIDI
 from tqdm import tqdm
 
-from utils.dsp import pad_audio
+from src.dsp import pad_audio
 
 """
 *Run this script as a module.

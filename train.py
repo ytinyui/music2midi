@@ -3,8 +3,8 @@ import argparse
 import pytorch_lightning as pl
 import torch
 
-from dataset import MyDataModule
-from model import TransformerWrapper
+from src.dataset import MyDataModule
+from src.model import TransformerWrapper
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cuda.matmul.allow_tf32 = True
