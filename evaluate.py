@@ -89,7 +89,7 @@ if __name__ == "__main__":
             )
         except Exception as e:
             print(e)
-            print(score_id)
+            print(f"Error occurred for {score_id}")
             continue
 
         result = evaluate(label_midi, output_midi)
