@@ -5,8 +5,10 @@ import multiprocessing
 import warnings
 from contextlib import redirect_stdout
 from pathlib import Path
+from typing import NamedTuple
 
 import librosa
+import mido
 import numpy as np
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
@@ -28,6 +30,71 @@ from synctoolbox.feature.pitch_onset import audio_to_pitch_onset_features
 from tqdm import tqdm
 
 warnings.filterwarnings(action="ignore")
+
+
+class TempoEvent(NamedTuple):
+    time: float
+    bpm: float
+    tick: int
+    tick_diff: int
+
+
+def get_bpm(midi_file: mido.MidiFile) -> list[TempoEvent]:
+    tempo_old = 500_000  # default tempo
+    time_sig = None
+    tick = 0
+
+    for message in midi_file.merged_track:
+        tick += message.time
+
+        if message.type == "time_signature":
+            time_sig = (message.numerator, message.denominator)
+            # add default set_tempo event in case the midi file has no set_tempo events
+            if tick == 0:
+                ret = [
+                    TempoEvent(
+                        time=0,
+                        bpm=mido.tempo2bpm(tempo_old, time_sig),
+                        tick=0,
+                        tick_diff=0,
+                    )
+                ]
+
+        elif message.type in ["set_tempo", "end_of_track"]:
+            tick_diff = tick - ret[-1].tick
+            time_offset = ret[-1].time
+            tempo_new = message.tempo if message.type == "set_tempo" else tempo_old
+            ret.append(
+                TempoEvent(
+                    time=mido.tick2second(
+                        tick_diff, midi_file.ticks_per_beat, tempo_old
+                    )
+                    + time_offset,
+                    bpm=mido.tempo2bpm(tempo_new, time_sig),
+                    tick=tick,
+                    tick_diff=tick_diff,
+                )
+            )
+            tempo_old = tempo_new
+    # remove default set_tempo event
+    return ret[1:] if len(ret) > 2 else ret
+
+
+def get_beat_times(tempo_event_list: list[TempoEvent]) -> np.ndarray:
+    beat_times = []
+    for i in range(1, len(tempo_event_list)):
+        start = tempo_event_list[i - 1].time
+        step = 60 / tempo_event_list[i - 1].bpm
+        end = (
+            tempo_event_list[i].time
+            if i < len(tempo_event_list) - 1
+            else tempo_event_list[-1].time + step
+        )
+        beat_times.append(np.arange(start, end, step))
+
+    ret = np.concatenate(beat_times)
+    # remove redundant beat times due to floating point precision
+    return ret[np.diff(ret, prepend=1) > 1e-4]
 
 
 def simple_adjust_times(
@@ -201,7 +268,7 @@ def get_audio_wp(
 
     if strictly_monotonic:
         wp = make_path_strictly_monotonic(wp)
-    return wp, opt_chroma_shift
+    return wp / feature_rate, opt_chroma_shift
 
 
 def main(
@@ -212,15 +279,18 @@ def main(
 ):
     meta = OmegaConf.load(meta_path)
     score_id = str(meta.score.id)
-
     song_path = data_dir / "audio" / (score_id + ".wav")
     midi_path = data_dir / "midi" / (score_id + ".mid")
     midi_output_path = data_dir / "midi_aligned" / (score_id + ".mid")
+    wp_path = data_dir / "warp_path" / (score_id + ".npy")
+    beat_times_path = data_dir / "beat_times" / (score_id + ".npy")
     if not song_path.exists():
         print(f"{song_path.name} file not found")
         return
-    if midi_output_path.exists():
-        return
+
+    midi_data_mido = mido.MidiFile(midi_path)
+    tempo_event_list = get_bpm(midi_data_mido)
+    beat_times = get_beat_times(tempo_event_list)
 
     song_audio, sr = librosa.load(str(song_path), sr=sr)
     song_audio = librosa.util.normalize(song_audio)
@@ -235,16 +305,16 @@ def main(
             sr=sr,
             feature_rate=feature_rate,
         )
-    wp_s = wp / feature_rate
 
-    midi_aligned = simple_adjust_times(midi_data, wp_s[1], wp_s[0])
-    dtw_std = np.std(wp_s[0] - wp_s[1])
+    midi_aligned = simple_adjust_times(midi_data, wp[1], wp[0])
+    beat_times_aligned = np.interp(beat_times, wp[1], wp[0])
 
     midi_aligned.write(str(midi_output_path))
+    np.save(wp_path, wp)
+    np.save(beat_times_path, beat_times_aligned)
     meta.score.num_tracks = len(midi_data.instruments)
     meta.youtube.duration = librosa.get_duration(y=song_audio, sr=sr)
     meta.metrics = OmegaConf.create()
-    meta.metrics.dtw_std = float(dtw_std)
     meta.metrics.opt_chroma_shift = int(opt_chroma_shift)
     OmegaConf.save(meta, meta_path)
 
@@ -256,11 +326,13 @@ if __name__ == "__main__":
 
     data_dir = Path(args.data_dir)
     (data_dir / "midi_aligned").mkdir(exist_ok=True)
+    (data_dir / "warp_path").mkdir(exist_ok=True)
+    (data_dir / "beat_times").mkdir(exist_ok=True)
     config = OmegaConf.load("config.yaml")
     sr = config.dataset.sample_rate
     feature_rate = config.dataset.sync_feature_rate
 
-    Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
+    Parallel(n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing")(
         delayed(main)(
             meta_path,
             data_dir,
