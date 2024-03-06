@@ -1,34 +1,45 @@
 # Preprocess Scripts
+
 ---
-- Note : the order of these scripts is IMPORTANT. 
+
+- Note : the order of these scripts is IMPORTANT.
 - the preprocessing step is easy. but environment setting is not. please understand.
 - If you encounter any problems, please do not hesitate to email me or open an issue to the github.
+- install [fluidsynth](https://github.com/FluidSynth/fluidsynth/wiki/Download)
+- install [rubberband](https://breakfastquay.com/rubberband/)
 
 1. Transcribe piano wavs to midi
+
 - You should transcribe {piano_cover_file.wav} -> {piano_cover_file.mid}
 - I recommend you to use original codes from this repo : [High-resolution Piano Transcription with Pedals by Regressing Onsets and Offsets Times](https://github.com/qiuqiangkong/piano_transcription_inference)
 
-2. synchronize midi 
+2. synchronize midi
+
 ```bash
 python pop_align.py DATA_DIR
 ```
 
 3. Estimate Pop's beats
+
 ```bash
-python bpm_quantize.py DATA_DIR 
+python bpm_quantize.py DATA_DIR
 ```
 
 4. get separated vocal track
+   **Important: please install spleeter in a different python environment to avoid version conflicts**
+
 ```bash
 python split_spleeter.py DATA_DIR
 ```
 
-5. caculate melody chroma accuracy
+5. calculate melody chroma accuracy
+
 ```bash
-python melody_accuracy.py DATA_DIR 
+python melody_accuracy.py DATA_DIR
 ```
 
 # Expected Structure
+
 ```
 ├── -7lV0oJ0QXc
 │   ├── EHl_eQhgefw.beatinterval.npy
@@ -48,16 +59,16 @@ python melody_accuracy.py DATA_DIR
 ```
 
 ## Descriptions for each data
-1. ```*.beattime.npy```
-    - timesteps (unit : second) extracted using essentia. ```np.ndarray```. (num_beats, )
-2. ```*.beatstep.npy```
-    - timesteps (unit : second) per every half-beat. it is calculated using linear interpolation of ```beattime```.
-2. ```*.notes.npy```
-    - ```np.ndarray``` shape: ```(number_of_notes, 4)```
-    - each row contains : ```[onset(unit: index), offset(unit: index), pitch, velocity]```
-    - onset/offset values mean that the index of ```beatstep``` time. 
-    - for example, 
-        - ```beatstep = [0.6, 1.0, 1.4]```
-        - ```note = [0, 1, 77, 88]``
-        - then ```note``` means a note starts from 0.6sec to 1.0sec, and its pitch is 77 and velocity is 88.
 
+1. `*.beattime.npy`
+   - timesteps (unit : second) extracted using essentia. `np.ndarray`. (num_beats, )
+2. `*.beatstep.npy`
+   - timesteps (unit : second) per every half-beat. it is calculated using linear interpolation of `beattime`.
+3. `*.notes.npy`
+   - `np.ndarray` shape: `(number_of_notes, 4)`
+   - each row contains : `[onset(unit: index), offset(unit: index), pitch, velocity]`
+   - onset/offset values mean that the index of `beatstep` time.
+   - for example,
+     - `beatstep = [0.6, 1.0, 1.4]`
+     - ``note = [0, 1, 77, 88]`
+     - then `note` means a note starts from 0.6sec to 1.0sec, and its pitch is 77 and velocity is 88.
