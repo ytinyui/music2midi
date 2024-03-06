@@ -10,4 +10,4 @@ code:
     beginner: 1
     intermediate: 2
     advanced: 3
-min duration: 120
+min_duration: 120
