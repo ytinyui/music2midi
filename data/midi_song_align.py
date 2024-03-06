@@ -192,8 +192,8 @@ def get_audio_wp(
     piano_audio: np.ndarray,
     sr: int,
     feature_rate: int = 50,
-    strictly_monotonic: bool = False,
-):
+    strictly_monotonic: bool = True,
+) -> tuple[np.ndarray, int]:
     """
     get warp path array with shape: [2, L].
     wp[0] = frames of song
