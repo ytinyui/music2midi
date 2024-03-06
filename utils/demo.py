@@ -2,8 +2,8 @@ import re
 import os
 
 import shutil
-import youtube_dl
-from youtube_dl.utils import sanitize_filename
+import yt_dlp
+from yt_dlp.utils import sanitize_filename
 
 
 def download_youtube(url, dst_dir, dst_filename=None, keep_video=False):
@@ -20,7 +20,7 @@ def download_youtube(url, dst_dir, dst_filename=None, keep_video=False):
         ],
     }
 
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         rt = ydl.extract_info(url)
 
     title = sanitize_filename(rt["title"], restricted=True)

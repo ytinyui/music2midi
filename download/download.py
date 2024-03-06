@@ -7,19 +7,6 @@ from omegaconf import OmegaConf
 import os
 import argparse
 
-parser = argparse.ArgumentParser(description="piano cover downloader")
-
-parser.add_argument("dataset", type=str, default=None, help="provided csv")
-parser.add_argument("output_dir", type=str, default=None, help="output dir")
-parser.add_argument(
-    "--num_audio",
-    type=int,
-    default=None,
-    help="if specified, only {num_audio} pairs will be downloaded",
-)
-parser.add_argument("--parallel", default=multiprocessing.cpu_count(), type=int, help="number of parallel")
-parser.add_argument("--dry_run", default=False, action="store_true", help="whether dry_run")
-
 
 def youtube(url, 
             output_dir:Path, 
@@ -119,6 +106,17 @@ def record_error(id, msg):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="piano cover downloader")
+    parser.add_argument("dataset", type=str, default=None, help="provided csv")
+    parser.add_argument("output_dir", type=str, default=None, help="output dir")
+    parser.add_argument(
+        "--num_audio",
+        type=int,
+        default=None,
+        help="if specified, only {num_audio} pairs will be downloaded",
+    )
+    parser.add_argument("--parallel", default=multiprocessing.cpu_count(), type=int, help="number of parallel")
+    parser.add_argument("--dry_run", default=False, action="store_true", help="whether dry_run")
     args = parser.parse_args()
 
     df = pd.read_csv(args.dataset)
