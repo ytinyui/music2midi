@@ -120,6 +120,7 @@ class TokenizerBase:
             tokens = np.array([])
 
         else:
+            notes = np.copy(notes)
             if start_time is None:
                 start_time = notes[0, 0]
             notes[:, :2] -= start_time
@@ -184,7 +185,7 @@ class TokenizerBase:
         Decode tokens to numpy array (pretty_midi format)
         """
         notes = np.array([[-1, -1, -1, -1]])  # dummy element
-        cur_time_idx = start_idx
+        cur_time_idx = -1
         cur_velocity = -1
         cur_note = -1
 
@@ -192,7 +193,7 @@ class TokenizerBase:
             if token == EOS:
                 break
             if token >= self.time_token_offset:
-                cur_time_idx = token - self.time_token_offset
+                cur_time_idx = start_idx + token - self.time_token_offset
                 cur_velocity = -1
                 cur_note = -1
             elif token >= self.velocity_token_offset:
