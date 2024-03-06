@@ -1,58 +1,42 @@
 project: pop2piano
 dataset:
-  target_length: 256
-  input_length: 1024
-  n_bars: 2
   sample_rate: 22050
   sync_feature_rate: 50
-  midi_quantize_ms: 50
-composer_ids:
-  DooPiano: 0
-  freestyle pianoman: 1
-  PHianonize: 2
-  HANPPYEOM한뼘피아노: 3
-  The Theorist: 4
-  Pair Piano: 5
-  Jova Musique - Pianella Piano: 6
-  Sangeo of Music: 7
-  PineappleChord: 8
-  Piano in U: 9
-  Giwon Piano: 10
-  Joyce Leong: 11
-  Montechait: 12
-  aldy32: 13
-  Katherine Cordova: 14
-  YourPianoCover: 15
-  Riyandi Kusuma: 16
-  PianoX: 17
-  Flow Music Piano: 18
-  Piano Hug: 19
-  Pianella Piano: 20
+  segment_duration: 2
 t5:
   num_layers: 6
-  num_decoder_layers: 6
+  d_ff: 2048
   feed_forward_proj: gated-gelu
   tie_word_embeddings: false
   tie_encoder_decoder: false
-  vocab_size: 400
+  vocab_size: 500
   n_positions: 1024
   relative_attention_num_buckets: 32
 tokenizer:
+  midi_quantize_ms: 200
   vocab_size:
-    special: 4
-    mask: 10
+    special: 2
+    reserved: 8
     pitch: 128
     velocity: 128
-    time: 100
+    time: 200
   no_velocity: True
   default_velocity: 77
-  relative_time_steps: False
 trainer:
   max_epochs: 8000
-  accumulate_grad_batches: 1
+  accumulate_grad_batches: 4
   check_val_every_n_epoch: 10
 dataloader:
-  batch_size: 32
+  batch_size: 8
   num_workers: 4
 inference:
   batch_size: 64
+genre_id:
+  electronic: 0
+  pop: 1
+  rock: 2
+  soundtrack: 3
+difficulty_id:
+  beginner: 0
+  intermediate: 1
+  advanced: 2
