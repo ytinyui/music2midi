@@ -46,7 +46,6 @@ class TokenizerBase:
         self.time_token_offset = (
             self.velocity_token_offset + self.config.vocab_size.velocity
         )
-        self.vocab_size = sum(self.config.vocab_size.values())
 
     def to_string(self, tokens: np.ndarray) -> list[str]:
         def _to_string(token: int) -> str:
@@ -134,7 +133,7 @@ class TokenizerBase:
             notes[:, :2] = notes[:, :2] / self.time_step
             notes[:, :2] = np.rint(np.nextafter(notes[:, :2], notes[:, :2] + 1))
             # clip time step values
-            notes[:, :2] = np.minimum(notes[:, :2], self.vocab_size - 1)
+            notes[:, :2] = np.minimum(notes[:, :2], self.config.vocab_size.time - 1)
 
             time_indices = np.unique(notes[:, :2])
             tokens = np.array(
