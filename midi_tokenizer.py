@@ -14,7 +14,7 @@ def get_tokenizer(config) -> MidiTokenizerNoVelocity | MidiTokenizer:
     Use this function to get the tokenizer.
     """
     if config.no_velocity == True:
-        return MidiTokenizerNoVelocity(config, default_velocity=77)
+        return MidiTokenizerNoVelocity(config)
     else:
         return MidiTokenizer(config)
 
@@ -156,15 +156,49 @@ class TokenizerBase:
 
         return notes
 
+    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
+        notes = np.array([[-1, -1, -1, -1]])  # dummy element
+        cur_time = start_idx
+        cur_velocity = -1
+        cur_note = -1
+
+        for token in tokens:
+            if token == EOS:
+                break
+            if token >= self.time_offset:
+                if self.config.relative_time_steps:
+                    cur_time += token - self.time_offset
+                else:
+                    cur_time = token - self.time_offset
+                cur_velocity = -1
+                cur_note = -1
+            elif token >= self.velocity_offset:
+                cur_velocity = token - self.velocity_offset
+                if self.config.no_velocity:
+                    cur_velocity *= self.config.default_velocity
+                cur_note = -1
+            elif token >= self.pitch_offset:
+                cur_note = token - self.pitch_offset
+            elif token >= self.mask_offset:
+                continue
+
+            if -1 in [cur_time, cur_velocity, cur_note]:
+                continue
+
+            notes = _tokens_to_note(notes, cur_time, cur_note, cur_velocity)
+
+            cur_note = -1
+            if not self.config.no_velocity:
+                cur_velocity = -1
+
+        return notes
+
     def _get_tokens(
         self, onset_notes: np.ndarray, offset_notes: np.ndarray, index: int
     ):
         """
         Get tokens from onset_notes and offset_notes, given the time index.
         """
-        return NotImplementedError
-
-    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
         return NotImplementedError
 
 
@@ -199,44 +233,10 @@ class MidiTokenizer(TokenizerBase):
             ]
         )
 
-    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
-        notes = np.array([[-1, -1, -1, -1]])  # dummy element
-        cur_time = start_idx
-        cur_velocity = -1
-        cur_note = -1
-
-        for token in tokens:
-            if token == EOS:
-                break
-            if token >= self.time_offset:
-                if self.config.relative_time_steps:
-                    cur_time += token - self.time_offset
-                else:
-                    cur_time = token - self.time_offset
-                cur_velocity = -1
-                cur_note = -1
-            elif token >= self.velocity_offset:
-                cur_velocity = token - self.velocity_offset
-            elif token >= self.pitch_offset:
-                cur_note = token - self.pitch_offset
-            elif token >= self.mask_offset:
-                continue
-
-            if -1 in [cur_time, cur_velocity, cur_note]:
-                continue
-
-            notes = _tokens_to_note(notes, cur_time, cur_note, cur_velocity)
-
-            cur_velocity = -1
-            cur_note = -1
-
-        return notes
-
 
 class MidiTokenizerNoVelocity(TokenizerBase):
-    def __init__(self, config: DictConfig, default_velocity=77):
+    def __init__(self, config: DictConfig):
         super().__init__(config)
-        self.default_velocity = default_velocity
 
     def _get_tokens(
         self, onset_notes: np.ndarray, offset_notes: np.ndarray, index: int
@@ -260,38 +260,6 @@ class MidiTokenizerNoVelocity(TokenizerBase):
             else []
         )
         return [index + self.time_offset] + onset_tokens + offset_tokens
-
-    def _decode_tokens(self, tokens: np.ndarray, start_idx: int):
-        notes = np.array([[-1, -1, -1, -1]])  # dummy element
-        cur_time = start_idx
-        cur_velocity = -1
-        cur_note = -1
-
-        for token in tokens:
-            if token == EOS:
-                break
-            if token >= self.time_offset:
-                if self.config.relative_time_steps:
-                    cur_time += token - self.time_offset
-                else:
-                    cur_time = token - self.time_offset
-                cur_velocity = -1
-                cur_note = -1
-            elif token >= self.velocity_offset:
-                cur_velocity = (token - self.velocity_offset) * self.default_velocity
-                cur_note = -1
-            elif token >= self.pitch_offset:
-                cur_note = token - self.pitch_offset
-            elif token >= self.mask_offset:
-                continue
-
-            if -1 in [cur_time, cur_velocity, cur_note]:
-                continue
-            notes = _tokens_to_note(notes, cur_time, cur_note, cur_velocity)
-
-            cur_note = -1
-
-        return notes
 
 
 def notes_to_midi(notes: np.ndarray, beatstep: np.ndarray, offset_sec: float = 0.0):
@@ -330,9 +298,9 @@ def _tokenize(
 ) -> list:
     onset_idx, offset_idx, pitch, velocity = note
     if onset:
-        return [pitch + pitch_offset, velocity + velocity_offset]
+        return [velocity + velocity_offset, pitch + pitch_offset]
     else:
-        return [pitch + pitch_offset, velocity_offset]
+        return [velocity_offset, pitch + pitch_offset]
 
 
 @njit
