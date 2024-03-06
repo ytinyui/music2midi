@@ -2,6 +2,7 @@ import argparse
 
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping
 
 from src.dataset import MyDataModule
 from src.model import TransformerWrapper
@@ -19,5 +20,7 @@ if __name__ == "__main__":
 
     my_dataset = MyDataModule(args.data_dir, args.config)
     model = TransformerWrapper(args.config)
-    trainer = pl.Trainer(**model.config.trainer)
+    trainer = pl.Trainer(
+        callbacks=[EarlyStopping(**model.config.early_stopping)], **model.config.trainer
+    )
     trainer.fit(model, my_dataset)

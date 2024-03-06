@@ -1,3 +1,4 @@
+import multiprocessing
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -9,17 +10,19 @@ import pretty_midi
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
+from joblib import Parallel, delayed
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
 from transformers import T5Config, T5ForConditionalGeneration
 from transformers.optimization import Adafactor, AdafactorSchedule
 
 import wandb
+from data.midi_song_align import get_audio_wp
 
 from .dataset import PAD, InputDataTuple
 from .dsp import to_stereo
 from .input import LogMelSpectrogram, MelConditioner
-from .tokenizer import TokenizerFactory
+from .tokenizer import MidiTokenizer
 
 
 class TransformerWrapper(pl.LightningModule):
@@ -33,7 +36,7 @@ class TransformerWrapper(pl.LightningModule):
             self.t5config.__setattr__(k, v)
 
         self.t5model = T5ForConditionalGeneration(self.t5config)
-        self.tokenizer = TokenizerFactory.create_tokenizer(self.config.tokenizer)
+        self.tokenizer = MidiTokenizer(self.config)
 
         n_genre = len(self.config.genre_id.keys())
         n_difficulty = len(self.config.difficulty_id.keys())
@@ -61,6 +64,7 @@ class TransformerWrapper(pl.LightningModule):
         difficulty_id = batch.difficulty_id
         x = self.spectrogram(x).transpose(-1, -2)
         x = self.mel_conditioner(x, genre_id, difficulty_id)
+        y[y == PAD] = -100
         y_pred = self.t5model(inputs_embeds=x, labels=y)
 
         loss = y_pred.loss
@@ -76,6 +80,7 @@ class TransformerWrapper(pl.LightningModule):
         difficulty_id = batch.difficulty_id
         x = self.spectrogram(x).transpose(-1, -2)
         x = self.mel_conditioner(x, genre_id, difficulty_id)
+        y[y == PAD] = -100
         y_pred = self.t5model(inputs_embeds=x, labels=y)
 
         loss = y_pred.loss
@@ -107,16 +112,27 @@ class TransformerWrapper(pl.LightningModule):
             audio_y, sr = librosa.load(str(audio_path), sr=sr)
         waveform = torch.from_numpy(audio_y).to(self.device)
         duration_per_batch = self.config.dataset.segment_duration
-        tokens = self.sample_tokens(
+        input_split, tokens_list = self.sample_tokens(
             waveform,
             sr,
             duration_per_batch,
             genre_id=genre_id,
             difficulty_id=difficulty_id,
         )
-        numpy_notes = self.tokenizer.batch_decode(
-            tokens, duration_per_batch=duration_per_batch
-        )
+        if self.tokenizer.time_step:
+            numpy_notes = self.tokenizer.batch_decode(
+                tokens_list, duration_per_batch=duration_per_batch
+            )
+        else:
+            numpy_notes_split = Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
+                delayed(self.output_dtw)(waveform.cpu().numpy(), tokens, sr)
+                for waveform, tokens in zip(input_split, tokens_list)
+            )
+            # add time offset
+            for i, _ in enumerate(numpy_notes_split):
+                numpy_notes_split[i][:, :2] += i * duration_per_batch
+            numpy_notes = np.concatenate(numpy_notes_split)
+
         midi_data = numpy_to_midi(numpy_notes)
 
         if show_plot or mix_path is not None:
@@ -153,12 +169,15 @@ class TransformerWrapper(pl.LightningModule):
         duration_per_batch: float,
         genre_id: int = 0,
         difficulty_id: int = 0,
-    ) -> np.ndarray:
-        input_batch = torch.split(waveform, sr * duration_per_batch)
+    ) -> tuple[tuple[torch.Tensor], list[np.ndarray]]:
+        """
+        Return: input tuple[waveform split, list of tokens]
+        """
+        input_split = torch.split(waveform, sr * duration_per_batch)
 
         tokens_list = []
         for batch in more_itertools.chunked(
-            input_batch, self.config.inference.batch_size
+            input_split, self.config.inference.batch_size
         ):
             batch_size = len(batch)
             inputs_embeds = pad_sequence(batch, batch_first=True, padding_value=PAD)
@@ -179,7 +198,25 @@ class TransformerWrapper(pl.LightningModule):
             )
             tokens_list += [*tokens.cpu().numpy()]
 
-        return tokens_list
+        return input_split, tokens_list
+
+    def output_dtw(
+        self, waveform: np.ndarray, tokens: np.ndarray, sr: int
+    ) -> np.ndarray:
+        duration = len(waveform) / sr
+        numpy_notes = np.float_(self.tokenizer.decode(tokens))
+        if len(numpy_notes) == 0:
+            return np.zeros((0, 4))
+        max_onset_beat = np.max(numpy_notes[:, 0])
+        numpy_notes[:, :2] *= duration / max_onset_beat
+        midi_data = numpy_to_midi(numpy_notes)
+        midi_synth = midi_data.fluidsynth(fs=sr)
+        wp, _ = get_audio_wp(waveform, midi_synth, sr, strictly_monotonic=True)
+        numpy_notes[:, :2] = np.interp(numpy_notes[:, :2], wp[1], wp[0])
+        # offset_times = np.interp(numpy_notes[:, 1], wp[1], wp[0])
+        # numpy_notes[:, 0] = onset_times
+        # numpy_notes[:, 1] = offset_times
+        return numpy_notes
 
 
 def numpy_to_midi(notes: np.ndarray) -> pretty_midi.PrettyMIDI:

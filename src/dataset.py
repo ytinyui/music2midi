@@ -1,4 +1,4 @@
-import os
+import multiprocessing
 from pathlib import Path
 from typing import Literal, NamedTuple
 
@@ -6,18 +6,20 @@ import librosa
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from joblib import Parallel, delayed
 from omegaconf import OmegaConf
+from sympy.abc import x
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from transformers import T5Config
 
-from .tokenizer import TokenizerFactory
+from .tokenizer import MidiTokenizer
 
 PAD = T5Config.from_pretrained("t5-small").pad_token_id
 
 
 class MetadataDict:
-    def __init__(self, data_dir: Path, config_path: str):
+    def __init__(self, score_ids: list[str], data_dir: Path, config_path: str):
         super().__init__()
         self.data_dir = data_dir
         self.config = OmegaConf.load(config_path)
@@ -25,13 +27,20 @@ class MetadataDict:
             "genre": {k: v for k, v in self.config.genre_id.items()},
             "difficulty": {k: v for k, v in self.config.difficulty_id.items()},
         }
+        load_meta_fn = lambda x: (
+            x,
+            OmegaConf.load(self.data_dir / "metadata" / f"{x}.yaml"),
+        )
+        meta_list = Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
+            delayed(load_meta_fn)(score_id) for score_id in score_ids
+        )
+        self.meta_dict = {k: v for k, v in meta_list}
 
     def get(self, key: Literal["genre", "difficulty"], score_id: str):
         """
-        Get the genre or difficulty id based on score_id
+        Get the genre or difficulty id of the sample, given score_id
         """
-        meta = OmegaConf.load(self.data_dir / "metadata" / (score_id + ".yaml"))
-        return self.key_dict[key][meta.score.get(key)]
+        return self.key_dict[key][self.meta_dict[score_id].score[key]]
 
 
 class InputDataTuple(NamedTuple):
@@ -89,15 +98,29 @@ class MyDataset(Dataset):
     ):
         super().__init__()
         self.config = OmegaConf.load(config_path)
-        self.metadata_dict = MetadataDict(data_dir, config_path)
+        self.metadata_dict = MetadataDict(score_ids, data_dir, config_path)
         self.data_dir = data_dir
-        self.tokenizer = TokenizerFactory.create_tokenizer(self.config.tokenizer)
+        self.tokenizer = MidiTokenizer(self.config)
 
         self.audio_paths = [
-            os.path.join(data_dir, "audio", score_id + ".wav") for score_id in score_ids
+            str(data_dir / "audio" / f"{score_id}.wav") for score_id in score_ids
         ]
-        self.midi_notes = [
-            np.load(os.path.join(data_dir, "midi_numpy", score_id + ".npy"))
+        if self.tokenizer.time_step:
+            self.midi_notes = [
+                np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
+                for score_id in score_ids
+            ]
+        else:
+            self.midi_notes = [
+                np.load(data_dir / "midi_quantized_numpy" / f"{score_id}.npy")
+                for score_id in score_ids
+            ]
+            self.beat_times_interpolated = [
+                np.load(data_dir / "beat_times_interpolated" / f"{score_id}.npy")
+                for score_id in score_ids
+            ]
+        self.beat_times = [
+            np.load(data_dir / "beat_times" / f"{score_id}.npy")
             for score_id in score_ids
         ]
         self.genre_ids = [
@@ -108,25 +131,73 @@ class MyDataset(Dataset):
         ]
 
     def __getitem__(self, index) -> InputDataTuple:
-        duration = self.config.dataset.segment_duration
+        segment_duration = self.config.dataset.segment_duration
+        max_num_tokens = (
+            self.config.dataset.max_num_tokens_per_second * segment_duration
+        )
+        max_beat_times_fluctuation = self.config.dataset.max_beat_times_fluctuation
+        beat_times = self.beat_times[index]
         genre_id = self.genre_ids[index]
         difficulty_id = self.difficulty_ids[index]
 
         audio_path = self.audio_paths[index]
-        audio_duration = librosa.get_duration(filename=audio_path)
-        start_time = np.random.choice(
-            np.arange(0, audio_duration - duration, self.tokenizer.time_step)
-        )
+        full_duration = librosa.get_duration(filename=audio_path)
+
+        while True:
+            if self.tokenizer.time_step:
+                start_time = np.random.choice(
+                    np.arange(
+                        0, full_duration - segment_duration, self.tokenizer.time_step
+                    )
+                )
+                beat_times_segment = beat_times[
+                    (beat_times >= start_time)
+                    & (beat_times < start_time + segment_duration)
+                ]
+                notes_segment = get_notes_segment(
+                    self.midi_notes[index], start_time, start_time + segment_duration
+                )
+                tokens = self.tokenizer(
+                    notes_segment, start_time=start_time, add_eos=True
+                )
+            else:
+                beat_times_interpolated = self.beat_times_interpolated[index]
+                start_time = np.random.choice(
+                    beat_times[beat_times <= full_duration - segment_duration]
+                )
+                beat_times_segment = beat_times[
+                    (beat_times >= start_time)
+                    & (beat_times < start_time + segment_duration)
+                ]
+                beat_times_interpolated_segment = beat_times_interpolated[
+                    (beat_times_interpolated >= start_time)
+                    & (beat_times_interpolated < start_time + segment_duration)
+                ]
+
+                start_index = np.searchsorted(beat_times_interpolated, start_time)
+                end_index = start_index + len(beat_times_interpolated_segment) - 1
+                notes_segment = get_notes_segment(
+                    self.midi_notes[index], start_index, end_index
+                )
+                tokens = self.tokenizer(
+                    notes_segment, start_time=start_index, add_eos=True
+                )
+
+            if len(beat_times_segment) < 3:
+                beat_times_fluctuation = 0
+            else:
+                beat_times_fluctuation = np.diff(np.diff(beat_times_segment))
+            if (
+                len(tokens) <= max_num_tokens
+                and np.max(np.abs(beat_times_fluctuation)) <= max_beat_times_fluctuation
+            ):
+                break
         waveform, sr = librosa.load(
             self.audio_paths[index],
             sr=self.config.dataset.sample_rate,
             offset=start_time,
-            duration=duration,
+            duration=segment_duration,
         )
-        notes_segment = get_notes_segment(
-            self.midi_notes[index], start_time, start_time + duration
-        )
-        tokens = self.tokenizer(notes_segment, start_time=start_time, add_eos=True)
 
         return InputDataTuple(
             x=torch.from_numpy(waveform),
@@ -147,7 +218,7 @@ def get_notes_segment(
 
 def collate_fn(batch):
     x_batch, y_batch, genre_id_batch, difficulty_id_batch = zip(*batch)
-    x_batch = pad_sequence(x_batch, batch_first=True, padding_value=PAD)
+    x_batch = pad_sequence(x_batch, batch_first=True, padding_value=0)
     y_batch = pad_sequence(y_batch, batch_first=True, padding_value=PAD)
     genre_id_batch = torch.stack(genre_id_batch)
     difficulty_id_batch = torch.stack(difficulty_id_batch)
