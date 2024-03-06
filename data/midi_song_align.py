@@ -242,6 +242,7 @@ def main(
 
     midi_aligned.write(str(midi_output_path))
     meta.score.num_tracks = len(midi_data.instruments)
+    meta.youtube.duration = librosa.get_duration(y=song_audio, sr=sr)
     meta.metrics = OmegaConf.create()
     meta.metrics.time_diff_std = float(time_diff_std)
     meta.metrics.opt_chroma_shift = int(opt_chroma_shift)
