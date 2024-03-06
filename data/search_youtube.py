@@ -1,7 +1,7 @@
 import argparse
 import re
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import yt_dlp
 from joblib import Parallel, delayed
@@ -19,18 +19,23 @@ def valid_title(meta: DictConfig) -> bool:
 
 def valid_artist(meta: DictConfig) -> bool:
     artist = meta.song.artist.lower()
-    if artist == "misc" or "medley" in artist:
-        return False
+    for word in ["medley", "mashup", "mash-up", "mashups", "guess"]:
+        if re.search(rf"\b{word}\b", artist, re.IGNORECASE):
+            return False
     return True
 
 
-def get_search_key(meta: DictConfig, filter_words: list[str] = []) -> str:
-    if "misc" in meta.song.artist.lower() or "OST" in meta.song.title:
+def get_search_key(meta: DictConfig, word_blacklist: list[str] = []) -> str:
+    if (
+        "misc" in meta.song.artist.lower()
+        or "anonymous" in meta.song.artist.lower()
+        or "OST" in meta.song.title
+    ):
         search_key = meta.score.title
     else:
         search_key = f"{meta.song.artist} - {meta.song.title}"
 
-    for x in filter_words:
+    for x in word_blacklist:
         search_key = search_key.casefold().replace(x.casefold(), " ")
 
     return search_key.strip()
@@ -39,13 +44,13 @@ def get_search_key(meta: DictConfig, filter_words: list[str] = []) -> str:
 def search_youtube(
     meta: DictConfig,
     output_dir: Path,
+    word_blacklist: list[str],
     cookie_file: str = None,
-    filter_words: list[str] = [],
     search_count: int = 3,
     quiet: bool = True,
 ) -> None:
-    search_key = get_search_key(meta, filter_words)
-    score_id = meta.score.id
+    search_key = get_search_key(meta, word_blacklist)
+    score_id = str(meta.score.id)
     score_duration = meta.score.duration
 
     output_csv = output_dir / (score_id + ".csv")
@@ -70,7 +75,7 @@ def search_youtube(
         if abs(duration - score_duration) > 60:
             return f"{score_id} | duration filtered: {duration}"
 
-        for x in filter_words:
+        for x in word_blacklist:
             if x.casefold() in (title := info.get("title")).casefold():
                 return f"{score_id} | title filtered: {title}"
 
@@ -96,18 +101,24 @@ def search_youtube(
         "quiet": quiet,
         "simulate": True,
     }
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.extract_info(f"ytsearch{search_count}:{search_key}")
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(f"ytsearch{search_count}:{search_key}")
+    except Exception as e:
+        print(f"{e} ({score_id})")
+        output_csv.unlink()
+        raise
 
 
 def main(
     meta_path: Path,
     output_dir: Path,
     cookie_file: str,
-    filter_words: list[str] = [],
+    word_blacklist: Optional[list[str]] = None,
     quiet: bool = True,
 ):
+    if word_blacklist is None:
+        word_blacklist = []
     meta = OmegaConf.load(meta_path)
     if not all(
         [
@@ -117,11 +128,13 @@ def main(
         ]
     ):
         return
+    if meta.score.genre != "classical":
+        word_blacklist.append("piano")
     search_youtube(
         meta,
         output_dir,
+        word_blacklist,
         cookie_file=cookie_file,
-        filter_words=filter_words,
         quiet=quiet,
     )
 
@@ -148,9 +161,9 @@ if __name__ == "__main__":
     output_dir = data_dir / "youtube_csv"
     output_dir.mkdir(exist_ok=True)
 
-    filter_words = [
-        "piano",
+    word_blacklist = [
         "transcription",
+        "cover",
         "covered",
         "solo",
         "medley",
@@ -168,7 +181,7 @@ if __name__ == "__main__":
             meta_path,
             output_dir,
             cookie_file=args.cookie_file,
-            filter_words=filter_words,
+            word_blacklist=word_blacklist,
             quiet=args.quiet,
         )
         for meta_path in tqdm(list(data_dir.glob("metadata/*.yaml")))
