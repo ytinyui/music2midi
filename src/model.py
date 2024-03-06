@@ -211,7 +211,7 @@ class TransformerWrapper(pl.LightningModule):
         max_beat_index = max(np.max(numpy_notes[:, :2]), 1)
         numpy_notes[:, :2] *= duration / max_beat_index
         midi_data = numpy_to_midi(numpy_notes)
-        midi_synth = midi_data.fluidsynth(fs=sr)
+        midi_synth = midi_data.synthesize(fs=sr)
         wp, _ = get_audio_wp(waveform, midi_synth, sr, strictly_monotonic=True)
         numpy_notes[:, :2] = np.interp(numpy_notes[:, :2], wp[1], wp[0])
         return numpy_notes

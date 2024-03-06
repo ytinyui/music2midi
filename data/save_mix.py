@@ -25,7 +25,7 @@ def main(
         return
     mix_path = data_dir / "audio_mix" / f"{score_id}.mp3"
     midi_data = PrettyMIDI(str(midi_path))
-    midi_synth = midi_data.fluidsynth(fs=sr)
+    midi_synth = midi_data.synthesize(fs=sr)
 
     midi_synth_path = mix_path.with_name(score_id + "_midi.wav")
     sf.write(str(midi_synth_path), midi_synth, sr)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     sr = config.dataset.sample_rate
     output_sr = sr if args.output_sr is None else args.output_sr
 
-    Parallel(n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing")(
+    Parallel(n_jobs=multiprocessing.cpu_count(), backend="multiprocessing")(
         delayed(main)(
             song_path, data_dir, sr=sr, output_sr=output_sr, output_mono=args.mono
         )
