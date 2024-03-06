@@ -35,11 +35,13 @@ def compute_metrics(
         SM.get("tempogram"), np.ones(conv_window_size) / conv_window_size, mode="valid"
     )
     midi_numpy = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
-
+    beat_times = np.load(data_dir / "beat_times" / f"{score_id}.npy")
     # Compute metrics
     wp_std = np.std(warp_path[0] - warp_path[1])
     norm_wp_std = wp_std / duration
-    beat_times_std = np.std(np.diff(np.diff(beat_times)))
+    beat_times = np.append(beat_times, duration)
+    beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0]
+    beat_times_fluctuation = np.diff(np.diff(beat_times))
     chroma_min = chroma_trace.min()
     tempogram_min = tempogram_trace.min()
     note_density = len(midi_numpy) / duration
@@ -47,8 +49,10 @@ def compute_metrics(
 
     # write to yaml
     metrics = meta.metrics
+    metrics.beat_times_fluctuation_median = float(
+        np.median(np.abs(beat_times_fluctuation))
+    )
     metrics.norm_wp_std = float(norm_wp_std)
-    metrics.beat_times_std = float(beat_times_std)
     metrics.chroma_min_similarity = float(chroma_min)
     metrics.tempogram_min_similarity = float(tempogram_min)
     metrics.note_density = note_density
@@ -57,9 +61,9 @@ def compute_metrics(
 
     return [
         score_id,
-        meta.metrics.opt_chroma_shift,
-        norm_wp_std,
-        beat_times_std,
+        metrics.opt_chroma_shift,
+        metrics.beat_times_fluctuation_median,
+        metrics.norm_wp_std,
         chroma_min,
         tempogram_min,
         note_density,
@@ -73,7 +77,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
-    metrics_list = Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
+    metrics_list = Parallel(
+        n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing"
+    )(
         delayed(compute_metrics)(meta_path, data_dir)
         for meta_path in tqdm(list(data_dir.glob("metadata/*.yaml")))
     )
@@ -84,8 +90,8 @@ if __name__ == "__main__":
         columns=[
             "score_id",
             "opt_chroma_shift",
+            "beat_times_fluctuation_median",
             "norm_wp_std",
-            "beat_times_std",
             "chroma_min_similarity",
             "tempogram_min_similarity",
             "note_density",
