@@ -10,12 +10,16 @@ from omegaconf import OmegaConf
 from pretty_midi import PrettyMIDI
 from tqdm import tqdm
 
-from src.dsp import pad_audio
 
-"""
-*Run this script as a module.
-*Example: python -m data.compute_similarity.py path/to/dataset/directory
-"""
+def pad_audio(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Pad the shorter audio to the longer one.
+    Returns a tuple of the two arrays.
+    """
+    return (
+        np.pad(x, (0, max(len(y) - len(x), 0))),
+        np.pad(y, (0, max(len(x) - len(y), 0))),
+    )
 
 
 def chunk_avg(x: np.ndarray, chunk_size: int) -> np.ndarray:
@@ -61,9 +65,9 @@ def compute_sm(
 def main(
     song_path: Path,
     data_dir: Path,
-    sr: int = 22050,
-    hop_length: int = 490,
-    chunk_size: int = 45,
+    sr: int,
+    hop_length: int = 512,
+    chunk_size: int = 256,
 ):
     score_id = song_path.stem
     midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
@@ -80,7 +84,7 @@ def main(
 
     song_audio, sr = librosa.load(str(song_path), sr=sr)
     midi_data = PrettyMIDI(str(midi_path))
-    midi_synth = midi_data.fluidsynth(fs=sr)
+    midi_synth = midi_data.synthesize(fs=sr)
     song_audio, midi_synth = pad_audio(song_audio, midi_synth)
 
     SM_chroma_cqt = compute_sm(

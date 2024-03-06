@@ -324,7 +324,7 @@ if __name__ == "__main__":
     sr = config.dataset.sample_rate
     feature_rate = config.dataset.dtw_feature_rate
 
-    Parallel(n_jobs=multiprocessing.cpu_count(), backend="multiprocessing")(
+    Parallel(n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing")(
         delayed(main)(
             meta_path,
             data_dir,

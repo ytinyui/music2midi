@@ -42,6 +42,12 @@ def get_opts(
         "postprocessor_args": {"ffmpeg": ["-ac", "1", "-ar", str(sr)]},
         "postprocessors": [
             {
+                "key": "FFmpegExtractAudio",
+                "nopostoverwrites": False,
+                "preferredcodec": "wav",
+                "preferredquality": "0",
+            },
+            {
                 "api": "https://sponsor.ajay.app",
                 "categories": {
                     "interaction",
@@ -71,12 +77,6 @@ def get_opts(
                 },
                 "sponsorblock_chapter_title": "[SponsorBlock]: " "%(category_names)l",
             },
-            {
-                "key": "FFmpegExtractAudio",
-                "nopostoverwrites": False,
-                "preferredcodec": "wav",
-                "preferredquality": "0",
-            },
         ],
         "match_filter": save_metadata_fn,
         "cookiefile": cookie_file,
@@ -88,7 +88,7 @@ def get_opts(
 def main(
     csv_path: Path,
     data_dir: Path,
-    sample_rate: int = 22050,
+    sample_rate: int = 16000,
     cookie_file: str = None,
     quiet=True,
 ) -> None:
@@ -97,13 +97,12 @@ def main(
         return
     output_file = data_dir / "audio" / f"{score_id}.wav"
     if output_file.exists():
-        print(f"{output_file.name} already downloaded")
+        print(f"{output_file} already downloaded")
         return
     meta_path = data_dir / "metadata" / f"{score_id}.yaml"
     meta = OmegaConf.load(meta_path)
     meta.youtube = OmegaConf.create()
     meta.youtube.url = f"https://www.youtube.com/watch?v={yt_id}"
-    # must be passed as kwargs
     save_metadata_fn = functools.partial(
         save_metadata,
         meta=meta,
@@ -120,7 +119,7 @@ def main(
     try:
         with yt_dlp.YoutubeDL(yt_opts) as ydl:
             ydl.download(meta.youtube.url)
-            meta.youtube.duration = librosa.get_duration(filename=str(output_file))
+            meta.youtube.duration = librosa.get_duration(path=str(output_file))
             OmegaConf.save(meta, meta_path)
     except yt_dlp.utils.DownloadError as e:
         print(e)
