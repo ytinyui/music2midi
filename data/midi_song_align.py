@@ -258,7 +258,8 @@ def main(
     score_id = meta.score.id
     song_path = data_dir / "audio" / f"{score_id}.wav"
     midi_path = data_dir / "midi" / f"{score_id}.mid"
-    midi_output_path = data_dir / "midi_aligned" / f"{score_id}.mid"
+    midi_transposed_path = data_dir / "midi_transposed" / f"{score_id}.mid"
+    midi_aligned_path = data_dir / "midi_aligned" / f"{score_id}.mid"
     wp_path = data_dir / "warp_path" / f"{score_id}.npy"
     beat_times_path = data_dir / "beat_times" / f"{score_id}.npy"
     if wp_path.exists():
@@ -271,7 +272,7 @@ def main(
     song_audio, sr = librosa.load(str(song_path), sr=sr)
     song_audio = librosa.util.normalize(song_audio)
     midi_data = PrettyMIDI(str(midi_path))
-    midi_audio = midi_data.fluidsynth(fs=sr)
+    midi_audio = midi_data.synthesize(fs=sr)
     midi_audio = librosa.util.normalize(midi_audio)
 
     with redirect_stdout(io.StringIO()):
@@ -285,7 +286,7 @@ def main(
                 else opt_chroma_shift - 12
             )
             midi_data = transpose_midi(midi_data, shift)
-            midi_audio = midi_data.fluidsynth(fs=sr)
+            midi_audio = midi_data.synthesize(fs=sr)
             midi_audio = librosa.util.normalize(midi_audio)
 
         wp, opt_chroma_shift = get_audio_wp(
@@ -294,12 +295,11 @@ def main(
             sr=sr,
             feature_rate=feature_rate,
         )
-
-    midi_aligned = simple_adjust_times(midi_data, wp[1], wp[0])
+    midi_data.write(str(midi_transposed_path))
     beat_times = midi_data.get_beats()
     beat_times_aligned = np.interp(beat_times, wp[1], wp[0])
-
-    midi_aligned.write(str(midi_output_path))
+    midi_aligned = simple_adjust_times(midi_data, wp[1], wp[0])
+    midi_aligned.write(str(midi_aligned_path))
     np.save(wp_path, wp)
     np.save(beat_times_path, beat_times_aligned)
     meta.score.num_tracks = len(midi_data.instruments)
@@ -316,6 +316,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
+    (data_dir / "midi_transposed").mkdir(exist_ok=True)
     (data_dir / "midi_aligned").mkdir(exist_ok=True)
     (data_dir / "warp_path").mkdir(exist_ok=True)
     (data_dir / "beat_times").mkdir(exist_ok=True)
@@ -323,7 +324,7 @@ if __name__ == "__main__":
     sr = config.dataset.sample_rate
     feature_rate = config.dataset.dtw_feature_rate
 
-    Parallel(n_jobs=multiprocessing.cpu_count() // 2, backend="multiprocessing")(
+    Parallel(n_jobs=multiprocessing.cpu_count(), backend="multiprocessing")(
         delayed(main)(
             meta_path,
             data_dir,
