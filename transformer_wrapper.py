@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 from transformers import T5Config, T5ForConditionalGeneration
 from transformers.optimization import Adafactor
 
-from midi_tokenizer import MidiTokenizerNoVelocity
+from midi_tokenizer import get_tokenizer
 from omegaconf import OmegaConf
 from preprocess.beat_quantizer import extract_rhythm, interpolate_beat_times
 from torch.nn.utils.rnn import pad_sequence
@@ -26,7 +26,7 @@ class TransformerWrapper(pl.LightningModule):
             self.t5config.__setattr__(k, v)
 
         self.transformer = T5ForConditionalGeneration(self.t5config)
-        self.tokenizer = MidiTokenizerNoVelocity(self.config.tokenizer)
+        self.tokenizer = get_tokenizer(self.config.tokenizer)
 
         num_composers = len(self.config.composer_ids.keys())
         self.mel_conditioner = MelConditioner(n_vocab=num_composers)
