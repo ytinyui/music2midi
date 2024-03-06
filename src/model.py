@@ -1,4 +1,6 @@
+import io
 import multiprocessing
+from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -18,7 +20,7 @@ from transformers import T5Config, T5ForConditionalGeneration
 from transformers.optimization import Adafactor, AdafactorSchedule
 
 import wandb
-from data.midi_song_align import get_audio_wp
+from data.midi_song_align import get_warp_path
 
 from .dataset import PAD, InputDataTuple
 from .dsp import to_stereo
@@ -212,7 +214,8 @@ class TransformerWrapper(pl.LightningModule):
         numpy_notes[:, :2] *= duration / max_beat_index
         midi_data = numpy_to_midi(numpy_notes)
         midi_synth = midi_data.synthesize(fs=sr)
-        wp, _ = get_audio_wp(waveform, midi_synth, sr, strictly_monotonic=True)
+        with redirect_stdout(io.StringIO()):
+            wp, _ = get_warp_path(waveform, midi_synth, sr, strictly_monotonic=True)
         numpy_notes[:, :2] = np.interp(numpy_notes[:, :2], wp[1], wp[0])
         return numpy_notes
 
