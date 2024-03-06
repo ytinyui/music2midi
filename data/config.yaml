@@ -1,25 +1,11 @@
-num scores:
-  beginner:
-    electronic: 500
-    pop: 1000
-    rock: 1000
-    soundtrack: 1000
-  intermediate:
-    electronic: 500
-    pop: 1000
-    rock: 1000
-    soundtrack: 1000
-  advanced:
-    electronic: 500
-    pop: 1000
-    rock: 500
-    soundtrack: 1000
 code:
   genre:
     electronic: 16
     pop: 14
     rock: 4
     soundtrack: 680
+    world_music: 195
+    classical: 216
   difficulty:
     beginner: 1
     intermediate: 2
