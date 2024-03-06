@@ -4,6 +4,7 @@ import multiprocessing
 from pathlib import Path
 from typing import Callable, Union
 
+import librosa
 import pandas as pd
 import yt_dlp
 from joblib import Parallel, delayed
@@ -21,9 +22,8 @@ def get_yt_id(score_id: str, data_dir: Path) -> str:
     return df.iloc[0].yt_id
 
 
-def save_metadata(info: dict, meta: DictConfig, meta_path: Path) -> None:
+def save_metadata(info: dict, meta: DictConfig, meta_path: Path):
     meta.youtube.title = info["title"]
-    meta.youtube.duration = info["duration"]
     OmegaConf.save(meta, meta_path)
 
 
@@ -120,9 +120,13 @@ def main(
     try:
         with yt_dlp.YoutubeDL(yt_opts) as ydl:
             ydl.download(meta.youtube.url)
+            meta.youtube.duration = librosa.get_duration(filename=str(output_file))
+            OmegaConf.save(meta, meta_path)
     except yt_dlp.utils.DownloadError as e:
         print(e)
         print(f"{score_id}: failed to download from {meta.youtube.url}")
+        meta.pop("youtube")
+        OmegaConf.save(meta, meta_path)
 
 
 if __name__ == "__main__":
