@@ -40,7 +40,7 @@ def compute_metrics(
     wp_std = np.std(warp_path[0] - warp_path[1])
     norm_wp_std = wp_std / duration
     beat_times = np.append(beat_times, duration)
-    beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0]
+    beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0.1]
     beat_times_fluctuation = np.diff(np.diff(beat_times))
     chroma_min = chroma_trace.min()
     tempogram_min = tempogram_trace.min()

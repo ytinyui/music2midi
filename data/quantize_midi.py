@@ -46,8 +46,8 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
         filename=str(data_dir / "audio" / f"{score_id}.wav"), sr=sr
     )
     beat_times = np.append(beat_times, audio_duration)
-    # beat times must be monotonically increasing
-    beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0]
+    # beat time interval lower limit: 100ms
+    beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0.1]
     beat_times_interpolated = interp_beat_times(beat_times, sub_beats)
 
     try:
