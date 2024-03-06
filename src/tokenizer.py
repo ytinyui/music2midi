@@ -222,7 +222,7 @@ def _note_to_token(
     note: np.ndarray,
     pitch_token_offset: int,
 ) -> int:
-    onset_idx, start_time, pitch, velocity = note
+    onset_idx, offset_idx, pitch, velocity = note
     return pitch + pitch_token_offset
 
 
