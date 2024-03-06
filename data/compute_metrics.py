@@ -19,22 +19,22 @@ def compute_metrics(
     """
     meta = OmegaConf.load(meta_path)
     score_id = meta.score.id
-    audio_path = data_dir / "audio" / (score_id + ".wav")
+    audio_path = data_dir / "audio" / f"{score_id}.wav"
     if not audio_path.exists():
         return
     duration = meta.youtube.duration
 
     # load data
-    warp_path = np.load(data_dir / "warp_path" / (score_id + ".npy"))
-    beat_times = np.load(data_dir / "beat_times" / (score_id + ".npy"))
-    SM = np.load(data_dir / "similarity" / (score_id + ".npz"))
+    warp_path = np.load(data_dir / "warp_path" / f"{score_id}.npy")
+    beat_times = np.load(data_dir / "beat_times" / f"{score_id}.npy")
+    SM = np.load(data_dir / "similarity" / f"{score_id}.npz")
     chroma_trace = np.convolve(
         SM.get("chroma_cqt"), np.ones(conv_window_size) / conv_window_size, mode="valid"
     )
     tempogram_trace = np.convolve(
         SM.get("tempogram"), np.ones(conv_window_size) / conv_window_size, mode="valid"
     )
-    midi_numpy = np.load(data_dir / "midi_numpy" / (score_id + ".npy"))
+    midi_numpy = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
 
     # Compute metrics
     wp_std = np.std(warp_path[0] - warp_path[1])
@@ -53,7 +53,7 @@ def compute_metrics(
     metrics.tempogram_min_similarity = float(tempogram_min)
     metrics.note_density = note_density
     metrics.norm_time_diff = norm_time_diff
-    OmegaConf.save(meta, data_dir / "metadata" / (score_id + ".yaml"))
+    OmegaConf.save(meta, meta_path)
 
     return [
         score_id,

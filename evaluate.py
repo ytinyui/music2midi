@@ -75,9 +75,9 @@ if __name__ == "__main__":
         meta = OmegaConf.load(data_dir / "metadata" / (score_id + ".yaml"))
         genre = meta.score.genre
         difficulty = meta.score.difficulty
-        label_midi = np.load(data_dir / "midi_numpy" / (score_id + ".npy"))
+        label_midi = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
         label_midi = numpy_to_midi(label_midi)
-        audio_path = data_dir / "audio" / (score_id + ".wav")
+        audio_path = data_dir / "audio" / f"{score_id}.wav"
 
         try:
             output_midi = model.generate(

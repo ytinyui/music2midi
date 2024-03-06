@@ -27,7 +27,7 @@ def midi_to_numpy(midi_data: PrettyMIDI) -> np.ndarray:
 
 
 def main(midi_path: Path, output_dir: Path):
-    output_path = output_dir / (midi_path.stem + ".npy")
+    output_path = output_dir / f"{midi_path.stem}.npy"
     if output_path.exists():
         print(f"{output_path} already exists")
         return
