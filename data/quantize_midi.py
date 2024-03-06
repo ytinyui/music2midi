@@ -14,12 +14,13 @@ def interp_beat_times(beat_times: np.ndarray, sub_beats: int) -> np.ndarray:
     Divide each beat into sub-beats
     Return: an array of time of each sub-beat
     """
-    beat_times = np.interp(
+    if sub_beats == 1:
+        return beat_times
+    return np.interp(
         np.arange(0, beat_times.size * sub_beats)[: 1 - sub_beats],
         np.arange(0, beat_times.size) * sub_beats,
         beat_times,
     )
-    return beat_times
 
 
 def quantize_note_times(input: np.ndarray, beat_times: np.ndarray) -> np.ndarray:
