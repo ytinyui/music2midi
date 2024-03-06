@@ -9,16 +9,16 @@ import pretty_midi
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
+import wandb
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
 from transformers import T5Config, T5ForConditionalGeneration
 from transformers.optimization import Adafactor, AdafactorSchedule
 
-import wandb
 from .dataset import PAD, InputDataTuple
+from .dsp import to_stereo
 from .input import LogMelSpectrogram, MelConditioner
 from .tokenizer import TokenizerFactory
-from .dsp import to_stereo
 
 
 class TransformerWrapper(pl.LightningModule):
@@ -101,14 +101,24 @@ class TransformerWrapper(pl.LightningModule):
     @torch.no_grad()
     def generate(
         self,
-        audio_path: Union[str, Path],
+        audio_path: Optional[Union[str, Path]] = None,
+        audio_y: Optional[np.ndarray] = None,
+        sr: Optional[int] = None,
         genre_id: int = 0,
         difficulty_id: int = 0,
         midi_path: Optional[Union[str, Path]] = None,
         mix_path: Optional[Union[str, Path]] = None,
         show_plot: bool = False,
     ) -> pretty_midi.PrettyMIDI:
-        audio_y, sr = librosa.load(str(audio_path), sr=self.config.dataset.sample_rate)
+        """
+        Specify either audio_path or audio_y as input.
+        """
+        if audio_path is None and audio_y is None:
+            raise ValueError("Either audio_path or audio_y should be specified")
+        if sr is None:
+            sr = self.config.dataset.sample_rate
+        if audio_y is None:
+            audio_y, sr = librosa.load(str(audio_path), sr=sr)
         waveform = torch.from_numpy(audio_y).to(self.device)
         duration_per_batch = self.config.dataset.segment_duration
         tokens = self.sample_tokens(
