@@ -11,7 +11,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from transformers import T5Config
 
-from .midi_tokenizer import TokenizerFactory
+from .tokenizer import TokenizerFactory
 
 PAD = T5Config.from_pretrained("t5-small").pad_token_id
 
