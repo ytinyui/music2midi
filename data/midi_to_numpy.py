@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 from joblib import Parallel, delayed
-from omegaconf import OmegaConf
 from pretty_midi import PrettyMIDI
 from tqdm import tqdm
 
