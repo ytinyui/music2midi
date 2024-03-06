@@ -21,7 +21,7 @@ def main(
     score_id = song_path.stem
     midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
     if not midi_path.exists():
-        print(f"{midi_path.name} file not found")
+        print(f"{midi_path} file not found")
         return
     mix_path = data_dir / "audio_mix" / f"{score_id}.mp3"
     midi_data = PrettyMIDI(str(midi_path))
