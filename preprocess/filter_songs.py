@@ -3,7 +3,6 @@ from omegaconf import OmegaConf
 import os
 import shutil
 import argparse
-from joblib import Parallel, delayed
 
 
 def filter_condition(yaml, condition):
@@ -20,9 +19,9 @@ def filter_condition(yaml, condition):
     raise ValueError(f"Unknown condition: {condition}")
 
 
-def run(file):
+def run(file, condition):
     yaml = OmegaConf.load(file)
-    if filter_condition(yaml):
+    if filter_condition(yaml, condition):
         os.remove(file)
         os.remove(file.with_suffix(".wav"))
         shutil.rmtree(file.parent / file.stem)
@@ -40,4 +39,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     file_paths = Path(args.path).glob("*.yaml")
-    Parallel(n_jobs=4)(delayed(run)(file, args.condition) for file in file_paths)
+    for file in file_paths:
+        run(file, args.condition)
