@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Optional
 
 import numpy as np
-import pretty_midi
 from numba import njit
 from omegaconf import DictConfig
 
 PAD = 0
 EOS = 1
+ONSET = 2
+OFFSET = 3
 
 
 class MidiTokenizer:
@@ -19,16 +20,8 @@ class MidiTokenizer:
             self.time_step = 0
         else:
             self.time_step = self.config.midi_quantize_ms / 1000
-        self.reserved_token_offset = self.config.vocab_size.special
-        self.pitch_token_offset = (
-            self.reserved_token_offset + self.config.vocab_size.reserved
-        )
-        self.velocity_token_offset = (
-            self.pitch_token_offset + self.config.vocab_size.pitch
-        )
-        self.time_token_offset = (
-            self.velocity_token_offset + self.config.vocab_size.velocity
-        )
+        self.pitch_token_offset = self.config.vocab_size.special
+        self.time_token_offset = self.pitch_token_offset + self.config.vocab_size.pitch
 
     def to_string(self, tokens: np.ndarray) -> list[str]:
         def _to_string(token: int) -> str:
@@ -36,15 +29,14 @@ class MidiTokenizer:
                 return "PAD"
             if token == EOS:
                 return "EOS"
+            if token == ONSET:
+                return "ONSET"
+            if token == OFFSET:
+                return "OFFSET"
             if token >= self.time_token_offset:
-                return ("time", token - self.time_token_offset)
-            if token >= self.velocity_token_offset:
-                return ("velocity", token - self.velocity_token_offset)
+                return f"time_{token - self.time_token_offset}"
             if token >= self.pitch_token_offset:
-                return ("note", token - self.pitch_token_offset)
-            if token >= self.reserved_token_offset:
-                return ("reserved", token - self.reserved_token_offset)
-
+                return f"note_{token - self.pitch_token_offset}"
             raise ValueError(f"Invalid token '{token}'")
 
         return [_to_string(token) for token in tokens]
@@ -169,28 +161,26 @@ class MidiTokenizer:
         """
         notes = np.zeros((0, 4))
         cur_time_idx = -1
-        cur_velocity = -1
+        cur_note_on = -1
         cur_note = -1
 
         for token in tokens:
             if token == EOS:
                 break
+            if token == ONSET:
+                cur_note_on = 1
+            if token == OFFSET:
+                cur_note_on = 0
             if token >= self.time_token_offset:
                 cur_time_idx = start_idx + token - self.time_token_offset
-                cur_velocity = -1
-                cur_note = -1
-            elif token >= self.velocity_token_offset:
-                cur_velocity = token - self.velocity_token_offset
-                cur_velocity *= self.config.default_velocity
+                cur_note_on = -1
                 cur_note = -1
             elif token >= self.pitch_token_offset:
                 cur_note = token - self.pitch_token_offset
-            elif token >= self.reserved_token_offset:
-                continue
 
-            if -1 in [cur_time_idx, cur_velocity, cur_note]:
+            if -1 in [cur_time_idx, cur_note_on, cur_note]:
                 continue
-
+            cur_velocity = cur_note_on * self.config.default_velocity
             notes = _tokens_to_note(notes, cur_time_idx, cur_note, cur_velocity)
             cur_note = -1
 
@@ -203,39 +193,20 @@ class MidiTokenizer:
         Get tokens from onset_notes and offset_notes, given the time index.
         """
         if len(onset_notes) > 0:
-            onset_tokens = [1 + self.velocity_token_offset] + [
+            onset_tokens = [ONSET] + [
                 _note_to_token(note, pitch_token_offset=self.pitch_token_offset)
                 for note in onset_notes
             ]
         else:
             onset_tokens = []
         if len(offset_notes) > 0:
-            offset_tokens = [0 + self.velocity_token_offset] + [
+            offset_tokens = [OFFSET] + [
                 _note_to_token(note, pitch_token_offset=self.pitch_token_offset)
                 for note in offset_notes
             ]
         else:
             offset_tokens = []
         return [index + self.time_token_offset] + onset_tokens + offset_tokens
-
-
-def notes_to_midi(notes: np.ndarray, beatstep: np.ndarray, offset_sec: float = 0.0):
-    new_pm = pretty_midi.PrettyMIDI(resolution=384, initial_tempo=120.0)
-    new_inst = pretty_midi.Instrument(program=0)
-
-    new_inst.notes = [
-        pretty_midi.Note(
-            velocity=velocity,
-            pitch=pitch,
-            start=beatstep[onset_idx] - offset_sec,
-            end=beatstep[start_time] - offset_sec,
-        )
-        for onset_idx, start_time, pitch, velocity in notes
-    ]
-    new_pm.instruments.append(new_inst)
-    new_pm.remove_invalid_notes()
-
-    return new_pm
 
 
 def get_onset_notes(notes: np.ndarray, index: int):
@@ -264,12 +235,11 @@ def _tokens_to_note(
 ) -> np.ndarray:
     # note onset
     # the offset time is set to -1 as dummy placement
-    if velocity > 0:
+    if velocity:
         append_note = np.int_([[onset_time_index, -1, pitch, velocity]])
         notes = np.vstack((notes, append_note))
-
     # note offset
-    elif velocity == 0:
+    else:
         offset_note_idx = np.where(
             (
                 (notes[:, 0] < onset_time_index)

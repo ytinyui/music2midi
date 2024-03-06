@@ -32,7 +32,7 @@ class LogMelSpectrogram(nn.Module):
 
 
 class MelConditioner(nn.Module):
-    def __init__(self, n_genre: int, n_difficulty: int, n_dim: int = 512):
+    def __init__(self, n_genre: int, n_difficulty: int, n_dim: int):
         super().__init__()
         self.embedding_genre = nn.Embedding(num_embeddings=n_genre, embedding_dim=n_dim)
         self.embedding_difficulty = nn.Embedding(

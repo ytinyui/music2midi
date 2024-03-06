@@ -8,7 +8,6 @@ import pytorch_lightning as pl
 import torch
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
-from sympy.abc import x
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 from transformers import T5Config
@@ -44,8 +43,8 @@ class MetadataDict:
 
 
 class InputDataTuple(NamedTuple):
-    x: torch.Tensor
-    y: torch.Tensor
+    inputs_embeds: torch.Tensor
+    labels: torch.Tensor
     genre_id: torch.LongTensor
     difficulty_id: torch.LongTensor
 
@@ -200,8 +199,8 @@ class MyDataset(Dataset):
         )
 
         return InputDataTuple(
-            x=torch.from_numpy(waveform),
-            y=torch.from_numpy(tokens),
+            inputs_embeds=torch.from_numpy(waveform),
+            labels=torch.from_numpy(tokens),
             genre_id=torch.LongTensor([genre_id]),
             difficulty_id=torch.LongTensor([difficulty_id]),
         )
@@ -222,5 +221,4 @@ def collate_fn(batch):
     y_batch = pad_sequence(y_batch, batch_first=True, padding_value=PAD)
     genre_id_batch = torch.stack(genre_id_batch)
     difficulty_id_batch = torch.stack(difficulty_id_batch)
-
     return InputDataTuple(x_batch, y_batch, genre_id_batch, difficulty_id_batch)

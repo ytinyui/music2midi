@@ -10,6 +10,7 @@ import pretty_midi
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
+import torch.nn.functional as F
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
@@ -40,7 +41,11 @@ class TransformerWrapper(pl.LightningModule):
 
         n_genre = len(self.config.genre_id.keys())
         n_difficulty = len(self.config.difficulty_id.keys())
-        self.mel_conditioner = MelConditioner(n_genre, n_difficulty)
+        self.mel_conditioner = MelConditioner(
+            n_genre,
+            n_difficulty,
+            n_dim=self.t5config.d_model,
+        )
         self.spectrogram = LogMelSpectrogram(
             sample_rate=self.config.dataset.sample_rate,
             n_mels=self.t5config.d_model,
@@ -58,35 +63,31 @@ class TransformerWrapper(pl.LightningModule):
         return [optimizer], [scheduler]
 
     def training_step(self, batch: InputDataTuple, batch_idx):
-        x = batch.x
-        y = batch.y
+        x = batch.inputs_embeds
+        y = batch.labels
         genre_id = batch.genre_id
         difficulty_id = batch.difficulty_id
         x = self.spectrogram(x).transpose(-1, -2)
         x = self.mel_conditioner(x, genre_id, difficulty_id)
         y[y == PAD] = -100
         y_pred = self.t5model(inputs_embeds=x, labels=y)
-
         loss = y_pred.loss
         self.log("train_loss", loss, prog_bar=True)
         wandb.log({"epoch": self.current_epoch, "train_loss": loss})
-
         return loss
 
     def validation_step(self, batch: InputDataTuple, batch_idx):
-        x = batch.x
-        y = batch.y
+        x = batch.inputs_embeds
+        y = batch.labels
         genre_id = batch.genre_id
         difficulty_id = batch.difficulty_id
         x = self.spectrogram(x).transpose(-1, -2)
         x = self.mel_conditioner(x, genre_id, difficulty_id)
         y[y == PAD] = -100
         y_pred = self.t5model(inputs_embeds=x, labels=y)
-
         loss = y_pred.loss
         self.log("val_loss", loss, prog_bar=True)
         wandb.log({"epoch": self.current_epoch, "val_loss": loss})
-
         return loss
 
     @torch.no_grad()
@@ -207,15 +208,12 @@ class TransformerWrapper(pl.LightningModule):
         numpy_notes = np.float_(self.tokenizer.decode(tokens))
         if len(numpy_notes) == 0:
             return np.zeros((0, 4))
-        max_onset_beat = np.max(numpy_notes[:, 0])
-        numpy_notes[:, :2] *= duration / max_onset_beat
+        max_beat_index = max(np.max(numpy_notes[:, :2]), 1)
+        numpy_notes[:, :2] *= duration / max_beat_index
         midi_data = numpy_to_midi(numpy_notes)
         midi_synth = midi_data.fluidsynth(fs=sr)
         wp, _ = get_audio_wp(waveform, midi_synth, sr, strictly_monotonic=True)
         numpy_notes[:, :2] = np.interp(numpy_notes[:, :2], wp[1], wp[0])
-        # offset_times = np.interp(numpy_notes[:, 1], wp[1], wp[0])
-        # numpy_notes[:, 0] = onset_times
-        # numpy_notes[:, 1] = offset_times
         return numpy_notes
 
 
