@@ -46,6 +46,7 @@ class TokenizerBase:
         self.time_token_offset = (
             self.velocity_token_offset + self.config.vocab_size.velocity
         )
+        self.vocab_size = sum(self.config.vocab_size.values())
 
     def to_string(self, tokens: np.ndarray) -> list[str]:
         def _to_string(token: int) -> str:
@@ -128,9 +129,11 @@ class TokenizerBase:
 
             # min length of each note is 1 step
             notes[:, 1] = np.maximum(notes[:, 1], notes[:, 0] + self.time_step)
-            # convert time to steps
+            # convert time to indices
             notes[:, :2] = notes[:, :2] / self.time_step
             notes[:, :2] = np.rint(np.nextafter(notes[:, :2], notes[:, :2] + 1))
+            # clip time step values
+            notes[:, :2] = np.minimum(notes[:, :2], self.vocab_size - 1)
 
             time_indices = np.unique(notes[:, :2])
             tokens = np.array(
@@ -144,23 +147,11 @@ class TokenizerBase:
                     )
                 ]
             )
-            # absolute time indices to relative time steps
-            relative_time_steps = np.diff(time_indices, prepend=0)
-            if np.sum(relative_time_steps >= self.config.vocab_size.time):
-                # clip time step values
-                relative_time_steps = np.minimum(
-                    relative_time_steps, self.config.vocab_size.time - 1
-                )
-            tokens[tokens >= self.time_token_offset] = (
-                relative_time_steps + self.time_token_offset
-            )
 
         if add_eos:
             tokens = np.append(tokens, EOS)
 
-        tokens = np.array(tokens, dtype=np.int_)
-
-        return tokens
+        return tokens.astype(np.int_)
 
     def decode(
         self,
@@ -201,7 +192,7 @@ class TokenizerBase:
             if token == EOS:
                 break
             if token >= self.time_token_offset:
-                cur_time_idx += token - self.time_token_offset
+                cur_time_idx = token - self.time_token_offset
                 cur_velocity = -1
                 cur_note = -1
             elif token >= self.velocity_token_offset:
