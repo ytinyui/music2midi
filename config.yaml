@@ -3,8 +3,12 @@ dataset:
   sample_rate: 22050
   sync_feature_rate: 50
   segment_duration: 2
+spectrogram:
+  n_fft: 4096
+  hop_length: 1024
+  f_min: 10.0
 t5:
-  num_layers: 6
+  num_layers: 8
   d_ff: 2048
   feed_forward_proj: gated-gelu
   tie_word_embeddings: false
@@ -13,7 +17,7 @@ t5:
   n_positions: 1024
   relative_attention_num_buckets: 32
 tokenizer:
-  midi_quantize_ms: 200
+  midi_quantize_ms: 100
   vocab_size:
     special: 2
     reserved: 8
@@ -23,7 +27,7 @@ tokenizer:
   no_velocity: True
   default_velocity: 77
 trainer:
-  max_epochs: 8000
+  max_epochs: 1000
   accumulate_grad_batches: 4
   check_val_every_n_epoch: 10
 dataloader:
