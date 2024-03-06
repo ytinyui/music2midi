@@ -217,6 +217,9 @@ def main(
     midi_output_path = data_dir / "midi_aligned" / (score_id + ".mid")
     wp_path = data_dir / "warp_path" / (score_id + ".npy")
     beat_times_path = data_dir / "beat_times" / (score_id + ".npy")
+    if wp_path.exists():
+        print(f"{wp_path} already exists")
+        return
     if not song_path.exists():
         print(f"{song_path.name} file not found")
         return

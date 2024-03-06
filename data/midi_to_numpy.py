@@ -8,8 +8,7 @@ from pretty_midi import PrettyMIDI
 from tqdm import tqdm
 
 
-def midi_to_numpy(midi_path: Path):
-    midi_data = PrettyMIDI(str(midi_path))
+def midi_to_numpy(midi_data: PrettyMIDI) -> np.ndarray:
     notes_array = []
 
     for track in midi_data.instruments:
@@ -28,11 +27,16 @@ def midi_to_numpy(midi_path: Path):
 
 
 def main(midi_path: Path, output_dir: Path):
-    if not midi_path.exists():
-        print(f"{midi_path.name} file not found")
+    output_path = output_dir / (midi_path.stem + ".npy")
+    if output_path.exists():
+        print(f"{output_path} already exists")
         return
-    numpy_notes = midi_to_numpy(midi_path)
-    np.save(output_dir / (midi_path.stem + ".npy"), numpy_notes)
+    if not midi_path.exists():
+        print(f"{midi_path} file not found")
+        return
+    midi_data = PrettyMIDI(str(midi_path))
+    numpy_notes = midi_to_numpy(midi_data)
+    np.save(output_path, numpy_notes)
 
 
 if __name__ == "__main__":
