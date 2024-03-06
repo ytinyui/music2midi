@@ -8,10 +8,12 @@ import os
 import argparse
 
 
-def youtube(url, 
-            output_dir:Path, 
-            output_file_template:str="%(id)s_-_%(uploader)s_-_%(title)s_-_%(duration)d_-_.%(ext)s",
-            dry_run=False):
+def youtube(
+    url,
+    output_dir: Path,
+    output_file_template: str = "%(id)s_-_%(uploader)s_-_%(title)s_-_%(duration)d_-_.%(ext)s",
+    dry_run=False,
+):
     output_template = output_dir / output_file_template
     return os.system(
         f"""yt-dlp -o "{str(output_template)}" \\
@@ -27,20 +29,25 @@ def youtube(url,
             {url}"""
     )
 
-def download_piano(piano_id:str, output_dir:Path, dry_run=False):
+
+def download_piano(piano_id: str, output_dir: Path, dry_run=False):
     if dry_run:
-        youtube(url=f"https://www.youtube.com/watch?v={piano_id}",
-        output_dir=output_dir,
-        dry_run=dry_run)
+        youtube(
+            url=f"https://www.youtube.com/watch?v={piano_id}",
+            output_dir=output_dir,
+            dry_run=dry_run,
+        )
         return
 
     if (output_dir / f"{piano_id}.wav").exists():
         print(piano_id, "file already exists (piano)")
         return
-    
-    youtube(url=f"https://www.youtube.com/watch?v={piano_id}",
+
+    youtube(
+        url=f"https://www.youtube.com/watch?v={piano_id}",
         output_dir=output_dir,
-        dry_run=dry_run)
+        dry_run=dry_run,
+    )
 
     files = list(output_dir.glob(f"{piano_id}*_-_.wav"))
     if len(files) == 0:
@@ -62,11 +69,13 @@ def download_piano(piano_id:str, output_dir:Path, dry_run=False):
     file.rename(output_dir / f"{piano_id}.wav")
 
 
-def download_song(piano_id:str, pop_id:str, output_dir:Path, dry_run=False):
+def download_song(piano_id: str, pop_id: str, output_dir: Path, dry_run=False):
     if dry_run:
-        youtube(url=f"https://www.youtube.com/watch?v={pop_id}",
+        youtube(
+            url=f"https://www.youtube.com/watch?v={pop_id}",
             output_dir=output_dir,
-            dry_run=dry_run)
+            dry_run=dry_run,
+        )
         return
     song_file = output_dir / piano_id / f"{pop_id}.wav"
     yaml_file = output_dir / f"{piano_id}.yaml"
@@ -77,9 +86,11 @@ def download_song(piano_id:str, pop_id:str, output_dir:Path, dry_run=False):
         print(piano_id, "file not found (song)")
         return
 
-    youtube(url=f"https://www.youtube.com/watch?v={pop_id}",
-            output_dir=output_dir / piano_id,
-            dry_run=dry_run)
+    youtube(
+        url=f"https://www.youtube.com/watch?v={pop_id}",
+        output_dir=output_dir / piano_id,
+        dry_run=dry_run,
+    )
 
     files = list((output_dir / piano_id).glob(f"{pop_id}*_-_.wav"))
     if len(files) == 0:
@@ -100,6 +111,7 @@ def download_song(piano_id:str, pop_id:str, output_dir:Path, dry_run=False):
     OmegaConf.save(meta, str(yaml_file))
     file.rename(song_file)
 
+
 def record_error(id, msg):
     with open("error.csv", "a") as f:
         f.write(f"{id},{msg}\n")
@@ -115,8 +127,15 @@ if __name__ == "__main__":
         default=None,
         help="if specified, only {num_audio} pairs will be downloaded",
     )
-    parser.add_argument("--parallel", default=multiprocessing.cpu_count(), type=int, help="number of parallel")
-    parser.add_argument("--dry_run", default=False, action="store_true", help="whether dry_run")
+    parser.add_argument(
+        "--parallel",
+        default=multiprocessing.cpu_count(),
+        type=int,
+        help="number of parallel",
+    )
+    parser.add_argument(
+        "--dry_run", default=False, action="store_true", help="whether dry_run"
+    )
     args = parser.parse_args()
 
     df = pd.read_csv(args.dataset)
@@ -124,11 +143,15 @@ if __name__ == "__main__":
 
     print("Downloading piano audio:")
     Parallel(n_jobs=args.parallel)(
-        delayed(download_piano)(piano_id, output_dir=Path(args.output_dir), dry_run=args.dry_run)
-        for piano_id in tqdm(list(df["piano_ids"]))
+        delayed(download_piano)(
+            piano_id, output_dir=Path(args.output_dir), dry_run=args.dry_run
         )
+        for piano_id in tqdm(list(df["piano_ids"]))
+    )
     print("Downloading song audio:")
     Parallel(n_jobs=args.parallel)(
-        delayed(download_song)(piano_id, pop_id, output_dir=Path(args.output_dir), dry_run=args.dry_run)
+        delayed(download_song)(
+            piano_id, pop_id, output_dir=Path(args.output_dir), dry_run=args.dry_run
+        )
         for piano_id, pop_id in tqdm(list(zip(df["piano_ids"], df["pop_ids"])))
     )
