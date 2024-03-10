@@ -3,7 +3,7 @@ import multiprocessing
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import NamedTuple, Optional, Union
 
 import librosa
 import more_itertools
@@ -12,51 +12,130 @@ import pretty_midi
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
-from transformers import T5Config, T5ForConditionalGeneration
+from transformers import GPT2Config, GPT2LMHeadModel, Swinv2Config, Swinv2Model
 from transformers.optimization import Adafactor, AdafactorSchedule
 
 import wandb
-from data.midi_song_align import get_warp_path
+from data.align_audio_midi import get_warp_path
 
-from .dataset import PAD, InputDataTuple
-from .dsp import to_stereo
-from .input import LogMelSpectrogram, MelConditioner
+from .input import LogMelSpectrogram, MelConditioner, ModelInputs
 from .tokenizer import MidiTokenizer
+from .utils import numpy_to_midi, to_stereo
 
 
-class TransformerWrapper(pl.LightningModule):
+class ContrastiveLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.temp = nn.Parameter(torch.ones(1))
+
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor):
+        assert x1.shape == x2.shape
+        sim = F.cosine_similarity(x1.unsqueeze(0), x2.unsqueeze(1), dim=-1).mean(dim=-1)
+        return F.cross_entropy(sim / self.temp, torch.arange(x1.shape[0]).to(x1.device))
+
+
+class EncoderDecoderTransformer(nn.Module):
     def __init__(self, config_path: str):
         super().__init__()
-
         self.config = OmegaConf.load(config_path)
-        self.t5config = T5Config.from_pretrained("t5-small")
-        self.PAD = self.t5config.pad_token_id
-        for k, v in self.config.t5.items():
-            self.t5config.__setattr__(k, v)
+        self.encoder_config = Swinv2Config(**self.config.swinv2)
+        self.decoder_config = GPT2Config.from_pretrained("gpt2")
+        for k, v in self.config.gpt2.items():
+            setattr(self.decoder_config, k, v)
 
-        self.t5model = T5ForConditionalGeneration(self.t5config)
+        self.encoder = Swinv2Model(self.encoder_config)
+        self.decoder = GPT2LMHeadModel(self.decoder_config)
+
         self.tokenizer = MidiTokenizer(self.config)
+        self.spectrogram = LogMelSpectrogram(
+            sample_rate=self.config.dataset.sample_rate,
+            n_mels=self.config.swinv2.image_size,
+            **self.config.spectrogram,
+        )
+        self.contrastive_loss = ContrastiveLoss()
 
         n_genre = len(self.config.genre_id.keys())
         n_difficulty = len(self.config.difficulty_id.keys())
         self.mel_conditioner = MelConditioner(
             n_genre,
             n_difficulty,
-            n_dim=self.t5config.d_model,
+            n_dim=self.config.gpt2.n_embd,
         )
-        self.spectrogram = LogMelSpectrogram(
-            sample_rate=self.config.dataset.sample_rate,
-            n_mels=self.t5config.d_model,
-            **self.config.spectrogram,
+
+    def forward(self, inputs: ModelInputs, **kwargs) -> dict:
+        if inputs.input_waveform is None:
+            return self.decoder(input_ids=labels, labels=labels, **kwargs)
+
+        encoder_inputs = self.spectrogram(inputs.input_waveform)
+        b, _, h, w = encoder_inputs.shape
+        assert (
+            h == w == self.encoder_config.image_size
+        ), f"n_mels({h}) does not match sequence length({w})"
+
+        encoder_last_hidden_state = self.encoder(encoder_inputs).last_hidden_state
+        if inputs.genre_id is None and inputs.difficulty_id is None:
+            encoder_hidden_states = encoder_last_hidden_state
+        else:
+            encoder_hidden_states = self.mel_conditioner(
+                encoder_last_hidden_state, inputs.genre_id, inputs.difficulty_id
+            )
+
+        labels = self.tokenizer(inputs.notes_batch, padding="left")
+        labels = labels.to(self.decoder.device)
+        attention_mask = labels != self.decoder.config.pad_token_id
+
+        decoder_outputs = self.decoder(
+            input_ids=labels,
+            attention_mask=attention_mask,
+            labels=labels,
+            encoder_hidden_states=encoder_hidden_states,
+            **kwargs,
         )
+
+        if inputs.notes_waveform is not None:
+            notes_spectrogram = self.spectrogram(inputs.notes_waveform)
+            ct_loss = self.contrastive_loss(
+                encoder_last_hidden_state,
+                self.encoder(notes_spectrogram).last_hidden_state,
+            )
+            decoder_outputs["ct_loss"] = ct_loss
+
+        return decoder_outputs
+
+    def generate(self, inputs: ModelInputs, **kwargs) -> torch.Tensor:
+        encoder_inputs = self.spectrogram(inputs.input_waveform)
+        b, _, h, w = encoder_inputs.shape
+        assert h == w == self.encoder_config.image_size
+
+        encoder_last_hidden_state = self.encoder(encoder_inputs).last_hidden_state
+        if inputs.genre_id is None and inputs.difficulty_id is None:
+            encoder_hidden_states = encoder_last_hidden_state
+        else:
+            encoder_hidden_states = self.mel_conditioner(
+                encoder_last_hidden_state, inputs.genre_id, inputs.difficulty_id
+            )
+
+        decoder_outputs = self.decoder.generate(
+            input_ids=torch.ones((b, 1)).long().to(self.decoder.device),
+            encoder_hidden_states=encoder_hidden_states,
+            **kwargs,
+        )
+        return decoder_outputs
+
+
+class Music2Midi(pl.LightningModule):
+    def __init__(self, config_path: str):
+        super().__init__()
+        self.model = EncoderDecoderTransformer(config_path)
 
     def setup(self, stage=None):
         now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        config_dict = OmegaConf.to_container(self.config)
+        config_dict = OmegaConf.to_container(self.model.config)
         wandb.init(project="music2midi", name=now_time, config=config_dict)
 
     def configure_optimizers(self):
@@ -64,33 +143,35 @@ class TransformerWrapper(pl.LightningModule):
         scheduler = AdafactorSchedule(optimizer)
         return [optimizer], [scheduler]
 
-    def training_step(self, batch: InputDataTuple, batch_idx):
-        x = batch.inputs_embeds
-        y = batch.labels
-        genre_id = batch.genre_id
-        difficulty_id = batch.difficulty_id
-        x = self.spectrogram(x).transpose(-1, -2)
-        x = self.mel_conditioner(x, genre_id, difficulty_id)
-        y[y == PAD] = -100
-        y_pred = self.t5model(inputs_embeds=x, labels=y)
-        loss = y_pred.loss
-        self.log("train_loss", loss, prog_bar=True)
-        wandb.log({"epoch": self.current_epoch, "train_loss": loss})
+    def training_step(self, inputs: ModelInputs, batch_idx):
+        outputs = self.model(inputs)
+        wandb_logs = {"epoch": self.current_epoch}
+        loss = outputs.loss
+        self.log("ce_loss", loss, prog_bar=True)
+        wandb_logs["ce_loss_train"] = loss
+
+        if "ct_loss" in outputs.keys():
+            ct_loss = outputs.ct_loss
+            self.log("ct_loss_train", ct_loss, prog_bar=True)
+            wandb_logs["ct_loss_train"] = ct_loss
+            loss = loss + ct_loss
+        wandb.log(wandb_logs)
         return loss
 
-    def validation_step(self, batch: InputDataTuple, batch_idx):
-        x = batch.inputs_embeds
-        y = batch.labels
-        genre_id = batch.genre_id
-        difficulty_id = batch.difficulty_id
-        x = self.spectrogram(x).transpose(-1, -2)
-        x = self.mel_conditioner(x, genre_id, difficulty_id)
-        y[y == PAD] = -100
-        y_pred = self.t5model(inputs_embeds=x, labels=y)
-        loss = y_pred.loss
-        self.log("val_loss", loss, prog_bar=True)
-        wandb.log({"epoch": self.current_epoch, "val_loss": loss})
-        return loss
+    def validation_step(self, inputs: ModelInputs, batch_idx):
+        outputs = self.model(inputs)
+        wandb_logs = {"epoch": self.current_epoch}
+        loss = outputs.loss
+        self.log("ce_loss_val", loss, prog_bar=True)
+        wandb_logs["ce_loss_val"] = loss
+
+        if "ct_loss" in outputs.keys():
+            ct_loss = outputs.ct_loss
+            self.log("ct_loss_val", ct_loss, prog_bar=True)
+            wandb_logs["ct_loss_val"] = ct_loss
+            loss = loss + ct_loss
+        wandb.log(wandb_logs)
+        return outputs.loss
 
     @torch.no_grad()
     def generate(
@@ -183,7 +264,7 @@ class TransformerWrapper(pl.LightningModule):
             input_split, self.config.inference.batch_size
         ):
             batch_size = len(batch)
-            inputs_embeds = pad_sequence(batch, batch_first=True, padding_value=PAD)
+            inputs_embeds = pad_sequence(batch, batch_first=True, padding_value=0)
             genre_ids = torch.zeros((batch_size, 1)).long() + genre_id
             difficulty_ids = torch.zeros((batch_size, 1)).long() + difficulty_id
 
@@ -218,21 +299,3 @@ class TransformerWrapper(pl.LightningModule):
             wp, _ = get_warp_path(waveform, midi_synth, sr, strictly_monotonic=True)
         numpy_notes[:, :2] = np.interp(numpy_notes[:, :2], wp[1], wp[0])
         return numpy_notes
-
-
-def numpy_to_midi(notes: np.ndarray) -> pretty_midi.PrettyMIDI:
-    midi_data = pretty_midi.PrettyMIDI(resolution=384, initial_tempo=120.0)
-    new_inst = pretty_midi.Instrument(program=0, name="Piano")
-
-    new_inst.notes = [
-        pretty_midi.Note(
-            start=onset_time,
-            end=offset_time,
-            pitch=int(pitch),
-            velocity=int(velocity),
-        )
-        for onset_time, offset_time, pitch, velocity in notes
-    ]
-    midi_data.instruments.append(new_inst)
-    midi_data.remove_invalid_notes()
-    return midi_data

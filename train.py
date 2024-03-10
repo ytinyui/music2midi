@@ -2,10 +2,9 @@ import argparse
 
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping
 
-from src.dataset import MyDataModule
-from src.model import TransformerWrapper
+from src.dataset import Music2MidiDataModule
+from src.model import Music2Midi
 
 torch.set_float32_matmul_precision("high")
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -18,9 +17,8 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default="config.yaml")
     args = parser.parse_args()
 
-    my_dataset = MyDataModule(args.data_dir, args.config)
-    model = TransformerWrapper(args.config)
-    trainer = pl.Trainer(
-        callbacks=[EarlyStopping(**model.config.early_stopping)], **model.config.trainer
-    )
+    my_dataset = Music2MidiDataModule(args.data_dir, args.config)
+    model = Music2Midi(args.config)
+    model.train()
+    trainer = pl.Trainer(**model.model.config.trainer)
     trainer.fit(model, my_dataset)

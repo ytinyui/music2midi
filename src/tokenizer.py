@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Iterable, Literal, Optional, Union
 
 import numpy as np
+import torch
 from numba import njit
 from omegaconf import DictConfig
+from torch.nn.utils.rnn import pad_sequence
 
 PAD = 0
-EOS = 1
-ONSET = 2
-OFFSET = 3
+BOS = 1
+EOS = 2
+ONSET = 3
+OFFSET = 4
 
 
 class MidiTokenizer:
@@ -27,6 +30,8 @@ class MidiTokenizer:
         def _to_string(token: int) -> str:
             if token == PAD:
                 return "PAD"
+            if token == BOS:
+                return "BOS"
             if token == EOS:
                 return "EOS"
             if token == ONSET:
@@ -41,52 +46,85 @@ class MidiTokenizer:
 
         return [_to_string(token) for token in tokens]
 
-    def batch_decode(
+    def decode(
         self,
-        batched_tokens: list[np.ndarray],
-        duration_per_batch: float,
+        tokens_batch: Iterable[Union[np.ndarray, torch.Tensor]],
+        mode: Literal["batched", "sequential"] = "batched",
+        duration_per_batch: Optional[float] = None,
         cutoff_time: Optional[int] = None,
-    ) -> np.ndarray:
+    ) -> Union[list[np.ndarray], np.ndarray]:
         """
         Use this method only if second is time unit
 
-        input: list of np.ndarray tokens
-        order: batch then seq_len
+        input: list of tokens
+        order: (batch, seq_len)
             - example: input[0  , 0], input[0, 1], ..., input[0, L-1],
                        input[1  , 0], input[1, 1], ..., input[1, L-1],
                        ...
                        input[N-1, 0], input[N, 1], ..., input[N, L-1]
 
+        if mode == "batched", tokens in the batch are decoded independently (return: list[np.ndarray])
+        if mode == "sequential", tokens in the batch are decoded in a single sequence (return: (L',))
+
+        cutoff_time: optional. Drop all notes after cutoff_time
         duration_per_batch: duration of each batch (in seconds)
-        return: [L']
         """
+        if mode == "batched":
+            return [self._decode(tokens, 0, cutoff_time) for tokens in tokens_batch]
+        elif mode == "sequential":
+            assert (
+                duration_per_batch is not None
+            ), 'duration_per_batch is required for mode="sequential"'
+            ret = []
+            start_idx = 0
+            n_steps = round(duration_per_batch / self.time_step)
+            for tokens in tokens_batch:
+                notes = self._decode(tokens, start_idx, cutoff_time)
+                ret.append(notes)
+                start_idx += n_steps
 
-        ret = []
-        start_idx = 0
-        n_steps = round(duration_per_batch / self.time_step)
-        for tokens in batched_tokens:
-            notes = self.decode(tokens, start_idx=start_idx, cutoff_time=cutoff_time)
-            ret.append(notes)
-            start_idx += n_steps
-
-        return np.concatenate(ret)
+            return np.concatenate(ret)
+        raise ValueError(f"Invalid argument mode={mode}")
 
     def __call__(
         self,
-        notes: np.ndarray,
-        start_time: Optional[int] = None,
+        notes_batch: Iterable[np.ndarray],
         cutoff_time: Optional[int] = None,
-        add_eos: Optional[bool] = True,
+        padding: Optional[Literal["left", "right"]] = "left",
+    ) -> torch.Tensor:
+        """
+        tokenize a tuple of notes and return a batched tensor
+
+        use right padding for batched inference
+        """
+        assert isinstance(notes_batch, Iterable), "notes should be passed in batch"
+        tokens_batch = [self._tokenize(notes, cutoff_time) for notes in notes_batch]
+        if len(tokens_batch) == 1:
+            return tokens_batch[0]
+
+        if padding == "left":
+            return pad_sequence(
+                tokens_batch, batch_first=True, padding_value=PAD
+            ).long()
+        elif padding == "right":
+            tokens_batch = [tokens[::-1] for tokens in tokens_batch]
+            return pad_sequence(
+                tokens_batch, batch_first=True, padding_value=PAD
+            ).long()[:, ::-1]
+        raise ValueError(f"Invalid argument padding={padding}")
+
+    def _tokenize(
+        self,
+        notes: np.ndarray,
+        cutoff_time: Optional[int] = None,
     ) -> np.ndarray:
         """
-        start_time: optional. Default: the time of the first onset
         cutoff_time: optional. Drop all notes after cutoff_time
 
         notes[0]: (onset_time, offset_time, pitch, velocity)
 
         Notes:
-            - if start time is None, the time is aligned with the first onset
-            - if add_eos is True, add EOS token at the end of the tokens list
+            - EOS token is appended at the end of the tokens
             - if the relative time steps exceed vocab size, the time steps will be clipped.
         """
         if len(notes) == 0:
@@ -94,10 +132,6 @@ class MidiTokenizer:
 
         else:
             notes = np.copy(notes)
-            if start_time is None:
-                start_time = notes[0, 0]
-            notes[:, :2] -= start_time
-
             if cutoff_time is not None:
                 notes = notes[notes[:, 0] < cutoff_time]
 
@@ -111,26 +145,23 @@ class MidiTokenizer:
             notes[:, :2] = np.minimum(notes[:, :2], self.config.vocab_size.time - 1)
 
             time_indices = np.unique(notes[:, :2])
-            tokens = np.array(
-                [
-                    tok
-                    for index in time_indices
-                    for tok in self._get_tokens(
-                        onset_notes=get_onset_notes(notes, index),
-                        offset_notes=get_offset_notes(notes, index),
-                        index=index,
-                    )
-                ]
-            )
+            tokens = [
+                tok
+                for index in time_indices
+                for tok in self._get_tokens(
+                    onset_notes=get_onset_notes(notes, index),
+                    offset_notes=get_offset_notes(notes, index),
+                    index=index,
+                )
+            ]
 
-        if add_eos:
-            tokens = np.append(tokens, EOS)
+        tokens.append(EOS)
 
-        return tokens.astype(np.int_)
+        return torch.Tensor(tokens).long()
 
-    def decode(
+    def _decode(
         self,
-        tokens: np.ndarray,
+        tokens: Union[np.ndarray, torch.Tensor],
         start_idx: int = 0,
         cutoff_time: Optional[int] = None,
     ) -> np.ndarray:
@@ -138,6 +169,8 @@ class MidiTokenizer:
         Decode tokens into notes array.
         If cutoff_time is provided, the note events after cutoff_time are ignored.
         """
+        if isinstance(tokens, torch.Tensor):
+            tokens = tokens.cpu().numpy()
         notes = self._decode_tokens(tokens, start_idx)
         # remove notes without offset time
         notes = notes[notes[:, 1] != -1]

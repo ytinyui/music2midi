@@ -10,7 +10,7 @@ from omegaconf import OmegaConf
 from pretty_midi import PrettyMIDI
 from tqdm import tqdm
 
-from src.model import TransformerWrapper, numpy_to_midi
+from src.model import Music2Midi, numpy_to_midi
 
 
 def get_highest_pitches_from_piano_roll(piano_roll: np.ndarray) -> np.ndarray:
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     model_name = args.name
 
     config = OmegaConf.load(args.config)
-    model = TransformerWrapper.load_from_checkpoint(
+    model = Music2Midi.load_from_checkpoint(
         args.ckpt_path, config_path=args.config
     ).cuda()
     model.eval()

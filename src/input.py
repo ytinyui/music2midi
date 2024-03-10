@@ -1,6 +1,17 @@
+from typing import NamedTuple, Optional
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torchaudio
+
+
+class ModelInputs(NamedTuple):
+    input_waveform: torch.Tensor
+    notes_batch: Optional[tuple[np.ndarray]] = None
+    notes_waveform: Optional[torch.Tensor] = None
+    genre_id: Optional[torch.LongTensor] = None
+    difficulty_id: Optional[torch.LongTensor] = None
 
 
 class LogMelSpectrogram(nn.Module):
@@ -22,13 +33,15 @@ class LogMelSpectrogram(nn.Module):
         )
 
     def forward(self, x):
-        # x : audio(batch, sample)
-        # X : melspec (batch, freq, frame)
+        """
+        x : waveform(batch, sample)
+        return : melspec(batch, 1, freq, frame)
+        """
         with torch.no_grad():
-            X = self.melspectrogram(x)
-            X = X.clamp(min=1e-6).log()
+            x = self.melspectrogram(x.float())
+            x = x.clamp(min=1e-6).log()
 
-        return X
+        return x.unsqueeze(1)
 
 
 class MelConditioner(nn.Module):

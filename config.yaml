@@ -1,22 +1,21 @@
 dataset:
   sample_rate: 16000
   dtw_feature_rate: 50
-  quantize_sub_beats: 0
-  segment_duration: 3
+  quantize_sub_beats: 0 # 8
+  segment_duration: 12.256 # (n_mels - 1) * hop_length / sr
   segment_num_sub_beats: 16
-  invalid_notes_threshold: 0.2
   max_num_tokens_per_second: 100
   max_beat_times_fluctuation: 0.3
   filter_threshold:
-    norm_wp_std: 0.03
-    beat_times_fluctuation_median: 0.05
+    norm_wp_std: 0.01
+    beat_times_fluctuation_median: 0.01
     chroma_min_similarity: 0.6
     tempogram_min_similarity: 0.6
     note_density: 40
 spectrogram:
   n_fft: 2048
-  hop_length: 1024
-  f_min: 10.0
+  hop_length: 512
+  f_min: 20.0
 t5:
   num_layers: 6
   d_model: 256
@@ -27,23 +26,34 @@ t5:
   vocab_size: 500
   n_positions: 1024
   relative_attention_num_buckets: 32
+swinv2:
+  num_channels: 1
+  image_size: 384
+  window_size: 12
+  num_heads: [2, 8, 16, 16]
+  embed_dim: 64 # output dim = embed_dim * 2 ** num_layers
+gpt2:
+  add_cross_attention: true
+  n_embd: 512
+  n_head: 8
+  vocab_size: 400
+  n_positions: 4096
+  n_layer: 8
+  pad_token_id: 0
+  bos_token_id: 1
+  eos_token_id: 2
 tokenizer:
   midi_quantize_ms: 100
   vocab_size:
-    special: 4
+    special: 5
     pitch: 128
-    time: 200
-  default_velocity: 77
+    time: 300
+  default_velocity: 80
 trainer:
   max_epochs: 800
-  accumulate_grad_batches: 1
-early_stopping:
-  monitor: val_loss
-  mode: min
-  min_delta: 0.05
-  patience: 50
+  accumulate_grad_batches: 4
 dataloader:
-  batch_size: 32
+  batch_size: 2
   num_workers: 4
 inference:
   batch_size: 128
