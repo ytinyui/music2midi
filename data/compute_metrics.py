@@ -9,9 +9,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm
 
 
-def compute_metrics(
-    meta_path: Path, data_dir: Path, conv_window_size: int = 3
-) -> list[list]:
+def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
     """
     Compute metrics of the data item and write them to the metadata yaml file.
 

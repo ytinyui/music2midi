@@ -122,5 +122,5 @@ if __name__ == "__main__":
 
     Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
         delayed(main)(song_path, data_dir, sr=sr)
-        for song_path in tqdm(list(data_dir.glob("audio/*.wav")))
+        for song_path in tqdm(list(data_dir.glob("audio_processed/*.wav")))
     )

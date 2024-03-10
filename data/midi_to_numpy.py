@@ -26,7 +26,7 @@ def fix_invalid_offsets(numpy_notes: np.ndarray) -> np.ndarray:
     return numpy_notes
 
 
-def remove_instant_notes(
+def remove_transiant_notes(
     numpy_notes: np.ndarray, threshold: float = 0.005
 ) -> np.ndarray:
     """
@@ -65,7 +65,7 @@ def main(midi_path: Path, output_dir: Path):
     midi_data = PrettyMIDI(str(midi_path))
     numpy_notes = midi_to_numpy(midi_data)
     numpy_notes = fix_invalid_offsets(numpy_notes)
-    numpy_notes = remove_instant_notes(numpy_notes)
+    numpy_notes = remove_transiant_notes(numpy_notes)
     np.save(output_path, numpy_notes)
 
 

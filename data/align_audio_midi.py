@@ -8,6 +8,7 @@ from pathlib import Path
 
 import librosa
 import numpy as np
+import soundfile as sf
 from joblib import Parallel, delayed
 from omegaconf import OmegaConf
 from pretty_midi import PrettyMIDI
@@ -257,6 +258,7 @@ def main(
     meta = OmegaConf.load(meta_path)
     score_id = meta.score.id
     song_path = data_dir / "audio" / f"{score_id}.wav"
+    song_processed_path = data_dir / "audio_processed" / f"{score_id}.wav"
     midi_path = data_dir / "midi" / f"{score_id}.mid"
     midi_transposed_path = data_dir / "midi_transposed" / f"{score_id}.mid"
     midi_aligned_path = data_dir / "midi_aligned" / f"{score_id}.mid"
@@ -270,6 +272,7 @@ def main(
         return
 
     song_audio, sr = librosa.load(str(song_path), sr=sr)
+    song_audio, _ = librosa.effects.hpss(song_audio, kernel_size=(20, 100))
     song_audio = librosa.util.normalize(song_audio)
     midi_data = PrettyMIDI(str(midi_path))
     midi_audio = midi_data.synthesize(fs=sr)
@@ -295,13 +298,14 @@ def main(
             sr=sr,
             feature_rate=feature_rate,
         )
+    sf.write(song_processed_path, song_audio, samplerate=sr)
     midi_data.write(str(midi_transposed_path))
     beat_times = midi_data.get_beats()
     beat_times_aligned = np.interp(beat_times, wp[1], wp[0])
     midi_aligned = simple_adjust_times(midi_data, wp[1], wp[0])
     midi_aligned.write(str(midi_aligned_path))
-    np.save(wp_path, wp)
     np.save(beat_times_path, beat_times_aligned)
+    np.save(wp_path, wp)
     meta.score.num_tracks = len(midi_data.instruments)
     meta.youtube.duration = librosa.get_duration(y=song_audio, sr=sr)
     meta.metrics = OmegaConf.create()
@@ -316,6 +320,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
+    (data_dir / "audio_processed").mkdir(exist_ok=True)
     (data_dir / "midi_transposed").mkdir(exist_ok=True)
     (data_dir / "midi_aligned").mkdir(exist_ok=True)
     (data_dir / "warp_path").mkdir(exist_ok=True)
