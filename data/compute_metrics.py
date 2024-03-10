@@ -17,7 +17,7 @@ def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
     """
     meta = OmegaConf.load(meta_path)
     score_id = meta.score.id
-    audio_path = data_dir / "audio" / f"{score_id}.wav"
+    audio_path = data_dir / "audio_preprocessed" / f"{score_id}.wav"
     if not audio_path.exists():
         return
     duration = meta.youtube.duration

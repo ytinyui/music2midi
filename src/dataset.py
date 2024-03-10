@@ -91,7 +91,8 @@ class Music2MidiDataset(Dataset):
         self.data_dir = data_dir
 
         self.audio_paths = [
-            str(data_dir / "audio" / f"{score_id}.wav") for score_id in score_ids
+            str(data_dir / "audio_preprocessed" / f"{score_id}.wav")
+            for score_id in score_ids
         ]
         self.beat_times_aligned = [
             np.load(data_dir / "beat_times_aligned" / f"{score_id}.npy")

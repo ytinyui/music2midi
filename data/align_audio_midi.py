@@ -258,7 +258,7 @@ def main(
     meta = OmegaConf.load(meta_path)
     score_id = meta.score.id
     song_path = data_dir / "audio" / f"{score_id}.wav"
-    song_processed_path = data_dir / "audio_processed" / f"{score_id}.wav"
+    song_processed_path = data_dir / "audio_preprocessed" / f"{score_id}.wav"
     midi_path = data_dir / "midi" / f"{score_id}.mid"
     midi_transposed_path = data_dir / "midi_transposed" / f"{score_id}.mid"
     midi_aligned_path = data_dir / "midi_aligned" / f"{score_id}.mid"
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
-    (data_dir / "audio_processed").mkdir(exist_ok=True)
+    (data_dir / "audio_preprocessed").mkdir(exist_ok=True)
     (data_dir / "midi_transposed").mkdir(exist_ok=True)
     (data_dir / "midi_aligned").mkdir(exist_ok=True)
     (data_dir / "warp_path").mkdir(exist_ok=True)

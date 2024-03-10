@@ -43,7 +43,7 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
     beat_times = np.load(beat_times_path)
     numpy_notes = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
     audio_duration = librosa.get_duration(
-        path=str(data_dir / "audio" / f"{score_id}.wav"), sr=sr
+        path=str(data_dir / "audio_preprocessed" / f"{score_id}.wav"), sr=sr
     )
     beat_times = np.append(beat_times, audio_duration)
     # beat time interval lower limit: 100ms
