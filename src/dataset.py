@@ -94,10 +94,6 @@ class Music2MidiDataset(Dataset):
             str(data_dir / "audio_preprocessed" / f"{score_id}.wav")
             for score_id in score_ids
         ]
-        self.beat_times_aligned = [
-            np.load(data_dir / "beat_times_aligned" / f"{score_id}.npy")
-            for score_id in score_ids
-        ]
         if self.config.dataset.quantize_sub_beats:
             self.midi_notes = [
                 np.load(data_dir / "midi_quantized_numpy" / f"{score_id}.npy")
@@ -124,67 +120,55 @@ class Music2MidiDataset(Dataset):
         ]
 
     def __getitem__(self, index) -> ModelInputs:
-        segment_duration = self.config.dataset.segment_duration  #! change this
+        segment_duration = self.config.dataset.segment_duration
         segment_num_sub_beats = self.config.dataset.segment_num_sub_beats
-        max_beat_times_fluctuation = self.config.dataset.max_beat_times_fluctuation
-        beat_times_aligned = self.beat_times_aligned[index]
         genre_id = self.genre_ids[index]
         difficulty_id = self.difficulty_ids[index]
 
         audio_path = self.audio_paths[index]
         full_duration = librosa.get_duration(path=audio_path)
 
-        while True:
-            if self.config.dataset.quantize_sub_beats:
-                # midi note time is beat index
-                warp_path = self.warp_paths[index]
-                beat_times_midi = self.beat_times_midi_interp[index]
-                midi_start_index = np.random.randint(
-                    0, len(beat_times_midi) - 1 - segment_num_sub_beats
-                )
-                midi_end_index = midi_start_index + segment_num_sub_beats
-                notes_segment = get_notes_segment(
-                    self.midi_notes[index],
-                    midi_start_index,
-                    midi_end_index,
-                    shift_to_start_time=True,
-                )
-                midi_start_time = beat_times_midi[midi_start_index]
-                midi_end_time = beat_times_midi[midi_end_index]
-                # audio start time
-                start_time = np.interp(midi_start_time, warp_path[1], warp_path[0])
-                end_time = np.interp(midi_end_time, warp_path[1], warp_path[0])
-                # ? segment_duration is different across batch, implement without num_sub_beats
-                segment_duration = end_time - start_time
-                beat_times_segment = beat_times_aligned[
-                    (beat_times_aligned >= start_time) & (beat_times_aligned < end_time)
-                ]
-            else:
-                start_time = np.random.choice(
-                    np.arange(0, full_duration - segment_duration, segment_duration)
-                )
-                end_time = start_time + segment_duration
-                beat_times_segment = beat_times_aligned[
-                    (beat_times_aligned >= start_time) & (beat_times_aligned < end_time)
-                ]
-                notes_segment = get_notes_segment(
-                    self.midi_notes[index],
-                    start_time,
-                    end_time,
-                    shift_to_start_time=True,
-                )
-            if len(beat_times_segment) < 3:
-                beat_times_fluctuation = 0
-            else:
-                beat_times_fluctuation = np.diff(np.diff(beat_times_segment))
-            if np.max(np.abs(beat_times_fluctuation)) <= max_beat_times_fluctuation:
-                break
+        if self.config.dataset.quantize_sub_beats:
+            # midi note time is beat index
+            warp_path = self.warp_paths[index]
+            beat_times_midi = self.beat_times_midi_interp[index]
+            midi_start_index = np.random.randint(
+                0, len(beat_times_midi) - 1 - segment_num_sub_beats
+            )
+            midi_end_index = midi_start_index + segment_num_sub_beats
+            notes_segment = get_notes_segment(
+                self.midi_notes[index],
+                midi_start_index,
+                midi_end_index,
+                shift_to_start_time=True,
+            )
+            midi_start_time = beat_times_midi[midi_start_index]
+            midi_end_time = beat_times_midi[midi_end_index]
+            # audio start time
+            start_time = np.interp(midi_start_time, warp_path[1], warp_path[0])
+            end_time = np.interp(midi_end_time, warp_path[1], warp_path[0])
+            # ? segment_duration is different across batch, implement without num_sub_beats
+            segment_duration = end_time - start_time
+        else:
+            start_time = np.random.choice(
+                np.arange(0, full_duration - segment_duration, segment_duration)
+            )
+            end_time = start_time + segment_duration
+            notes_segment = get_notes_segment(
+                self.midi_notes[index],
+                start_time,
+                end_time,
+                shift_to_start_time=True,
+            )
+
         waveform, sr = librosa.load(
             self.audio_paths[index],
             sr=self.config.dataset.sample_rate,
             offset=start_time,
             duration=segment_duration,
         )
+        transpose_step = np.random.randint(-6, 6)
+        waveform, notes_segment = transpose(waveform, notes_segment, transpose_step, sr)
         notes_waveform = numpy_to_midi(notes_segment).synthesize(fs=sr)
         waveform, notes_waveform = pad_audio(waveform, notes_waveform, mode="fix_x")
 
@@ -210,6 +194,12 @@ def get_notes_segment(
     if shift_to_start_time:
         ret[:, :2] -= start_time
     return ret
+
+
+def transpose(waveform, notes, step, sr):
+    waveform = librosa.effects.pitch_shift(waveform, sr=sr, n_steps=step)
+    notes[:, 2] += step
+    return waveform, notes
 
 
 def collate_fn(batch):
