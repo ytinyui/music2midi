@@ -26,40 +26,50 @@ def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
     warp_path = np.load(data_dir / "warp_path" / f"{score_id}.npy")
     beat_times = np.load(data_dir / "beat_times_aligned" / f"{score_id}.npy")
     SM = np.load(data_dir / "similarity" / f"{score_id}.npz")
-    chroma_trace = SM.get("chroma_cqt")
-    tempogram_trace = SM.get("tempogram")
-    midi_numpy = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
+    chroma_similarity = SM.get("chroma_cqt")
+    tempogram_similarity = SM.get("tempogram")
+    numpy_notes = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
     # Compute metrics
     wp_std = np.std(warp_path[0] - warp_path[1])
     norm_wp_std = wp_std / duration
+
     beat_times = np.append(beat_times, duration)
     beat_times = beat_times[np.diff(beat_times, prepend=-1) > 0.1]
-    beat_times_fluctuation = np.diff(np.diff(beat_times))
-    chroma_min = chroma_trace.min()
-    tempogram_min = tempogram_trace.min()
-    note_density = len(midi_numpy) / duration
+    split_count = 10
+    beat_times_split = np.array_split(beat_times, split_count)
+    beat_local_fluctuation = np.mean(
+        [np.max(np.abs(np.diff(np.diff(x)))) for x in beat_times_split if len(x) > 2]
+    )
+    notes_split_indices = np.searchsorted(
+        numpy_notes[:, 0], [x[0] for x in beat_times_split if len(x) > 0]
+    )
+    notes_split = np.array_split(numpy_notes, notes_split_indices)
+    piecewise_note_density = (
+        np.mean([len(x) for x in notes_split]) * split_count / duration
+    )
+
+    chroma_min = chroma_similarity.min()
+    tempogram_min = tempogram_similarity.min()
     norm_time_diff = abs(duration - meta.score.duration) / duration
 
     # write to yaml
     metrics = meta.metrics
-    metrics.beat_times_fluctuation_median = float(
-        np.median(np.abs(beat_times_fluctuation))
-    )
     metrics.norm_wp_std = float(norm_wp_std)
+    metrics.beat_local_fluctuation = float(beat_local_fluctuation)
+    metrics.piecewise_note_density = float(piecewise_note_density)
     metrics.chroma_min_similarity = float(chroma_min)
     metrics.tempogram_min_similarity = float(tempogram_min)
-    metrics.note_density = note_density
     metrics.norm_time_diff = norm_time_diff
     OmegaConf.save(meta, meta_path)
 
     return [
         score_id,
         metrics.opt_chroma_shift,
-        metrics.beat_times_fluctuation_median,
-        metrics.norm_wp_std,
+        norm_wp_std,
+        beat_local_fluctuation,
+        piecewise_note_density,
         chroma_min,
         tempogram_min,
-        note_density,
         norm_time_diff,
     ]
 
@@ -83,11 +93,11 @@ if __name__ == "__main__":
         columns=[
             "score_id",
             "opt_chroma_shift",
-            "beat_times_fluctuation_median",
             "norm_wp_std",
+            "beat_local_fluctuation",
+            "piecewise_note_density",
             "chroma_min_similarity",
             "tempogram_min_similarity",
-            "note_density",
             "norm_time_diff",
         ],
     )

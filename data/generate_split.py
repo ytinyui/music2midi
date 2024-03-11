@@ -3,24 +3,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf
 from sklearn.model_selection import train_test_split
-
-
-def filter_condition(meta: DictConfig):
-    metrics = meta.metrics
-    return (
-        False
-        if any(
-            [
-                metrics.opt_chroma_shift != 0,
-                metrics.chroma_min_similarity < 0.01,
-                metrics.tempogram_min_similarity < 0.01,
-            ]
-        )
-        else True
-    )
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -44,13 +28,10 @@ if __name__ == "__main__":
     )
     df_filtered = df[
         (df["norm_wp_std"] < threshold["norm_wp_std"])
-        & (
-            df["beat_times_fluctuation_median"]
-            < threshold["beat_times_fluctuation_median"]
-        )
+        & (df["beat_local_fluctuation"] < threshold["beat_local_fluctuation"])
+        & (df["piecewise_note_density"] < threshold["piecewise_note_density"])
         & (df["chroma_min_similarity"] > threshold["chroma_min_similarity"])
         & (df["tempogram_min_similarity"] > threshold["tempogram_min_similarity"])
-        & (df["note_density"] < threshold["note_density"])
     ]
 
     dataset_ids = df_filtered["score_id"].to_numpy()

@@ -67,7 +67,7 @@ def main(
     data_dir: Path,
     sr: int,
     hop_length: int = 512,
-    chunk_size: int = 256,
+    chunk_size: int = 96,
 ):
     score_id = song_path.stem
     midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
@@ -119,8 +119,9 @@ if __name__ == "__main__":
     (data_dir / "similarity").mkdir(exist_ok=True)
     config = OmegaConf.load(args.config)
     sr = config.dataset.sample_rate
+    chunk_size = config.dataset.similarity_chunk_size
 
     Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
-        delayed(main)(song_path, data_dir, sr=sr)
-        for song_path in tqdm(list(data_dir.glob("audio_processed/*.wav")))
+        delayed(main)(song_path, data_dir, sr=sr, chunk_size=chunk_size)
+        for song_path in tqdm(list(data_dir.glob("audio_preprocessed/*.wav")))
     )
