@@ -128,7 +128,7 @@ class MidiTokenizer:
             - if the relative time steps exceed vocab size, the time steps will be clipped.
         """
         if len(notes) == 0:
-            tokens = np.array([])
+            tokens = []
 
         else:
             notes = np.copy(notes)
@@ -200,6 +200,8 @@ class MidiTokenizer:
         for token in tokens:
             if token == EOS:
                 break
+            if token in [BOS, PAD]:
+                continue
             if token == ONSET:
                 cur_note_on = 1
             if token == OFFSET:
