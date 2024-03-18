@@ -105,13 +105,13 @@ def download_midi(
 def get_metadata(url: str, session: requests.Session) -> dict:
     content = get_content(url, session)
     score_data = content["store"]["score"]
-    score_id = score_data["id"]
+    piano_id = score_data["id"]
     score_title = score_data["title"]
     score_duration = content["store"]["jmuse_settings"]["score_player"]["json"][
         "metadata"
     ]["duration"]
     score_info = {
-        "id": str(score_id),
+        "id": str(piano_id),
         "title": html.unescape(score_title),
         "duration": int(score_duration),
         "url": url,
@@ -142,8 +142,8 @@ def download_from_url(
     yaml_dir = output_dir / "metadata"
     yaml_dir.mkdir(parents=True, exist_ok=True)
 
-    score_id = url.split("/")[-1]
-    yaml_file = (yaml_dir / score_id).with_suffix(".yaml")
+    piano_id = url.split("/")[-1]
+    yaml_file = (yaml_dir / piano_id).with_suffix(".yaml")
     if yaml_file.exists():
         return
     try:
@@ -151,15 +151,15 @@ def download_from_url(
     except KeyError:  # webpage not available
         return
     score_meta = metadata["score"]
-    assert score_id == score_meta["id"]
+    assert piano_id == score_meta["id"]
     if score_meta["duration"] < min_duration:
         return
     score_meta["difficulty"] = difficulty
     score_meta["genre"] = genre
-    tmp_dir = tmp_dir / score_id
+    tmp_dir = tmp_dir / piano_id
     download_midi(
         url,
-        output_path=(midi_dir / score_id).with_suffix(".mid"),
+        output_path=(midi_dir / piano_id).with_suffix(".mid"),
         tmp_dir=tmp_dir,
     )
     OmegaConf.save(metadata, yaml_file)

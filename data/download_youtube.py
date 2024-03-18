@@ -12,11 +12,11 @@ from omegaconf import DictConfig, OmegaConf
 from tqdm import tqdm
 
 
-def get_yt_id(score_id: str, data_dir: Path) -> str:
+def get_yt_id(piano_id: str, data_dir: Path) -> str:
     """
     returns the first entry in the csv
     """
-    df = pd.read_csv(data_dir / "youtube_csv" / f"{score_id}.csv")
+    df = pd.read_csv(data_dir / "youtube_csv" / f"{piano_id}.csv")
     if df.empty:
         return ""
     return df.iloc[0].yt_id
@@ -92,14 +92,14 @@ def main(
     cookie_file: str = None,
     quiet=True,
 ) -> None:
-    score_id = csv_path.stem
-    if (yt_id := get_yt_id(score_id, data_dir)) == "":
+    piano_id = csv_path.stem
+    if (yt_id := get_yt_id(piano_id, data_dir)) == "":
         return
-    output_file = data_dir / "audio" / f"{score_id}.wav"
+    output_file = data_dir / "audio" / f"{piano_id}.wav"
     if output_file.exists():
         print(f"{output_file} already downloaded")
         return
-    meta_path = data_dir / "metadata" / f"{score_id}.yaml"
+    meta_path = data_dir / "metadata" / f"{piano_id}.yaml"
     meta = OmegaConf.load(meta_path)
     meta.youtube = OmegaConf.create()
     meta.youtube.url = f"https://www.youtube.com/watch?v={yt_id}"
@@ -123,7 +123,7 @@ def main(
             OmegaConf.save(meta, meta_path)
     except yt_dlp.utils.DownloadError as e:
         print(e)
-        print(f"{score_id}: failed to download from {meta.youtube.url}")
+        print(f"{piano_id}: failed to download from {meta.youtube.url}")
         meta.pop("youtube")
         OmegaConf.save(meta, meta_path)
 

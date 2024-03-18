@@ -34,16 +34,16 @@ def quantize_note_times(input: np.ndarray, beat_times: np.ndarray) -> np.ndarray
 def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
     assert sub_beats > 0
     meta = OmegaConf.load(meta_path)
-    score_id = meta.score.id
-    beat_times_path = data_dir / "beat_times_aligned" / f"{score_id}.npy"
+    piano_id = meta.piano.id
+    beat_times_path = data_dir / "beat_times_aligned" / f"{piano_id}.npy"
     if not beat_times_path.exists():
         # print(f"{beat_times_path} file not found")
         return
 
     beat_times = np.load(beat_times_path)
-    numpy_notes = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
+    numpy_notes = np.load(data_dir / "midi_numpy" / f"{piano_id}.npy")
     audio_duration = librosa.get_duration(
-        path=str(data_dir / "audio_preprocessed" / f"{score_id}.wav"), sr=sr
+        path=str(data_dir / "audio_preprocessed" / f"{piano_id}.wav"), sr=sr
     )
     beat_times = np.append(beat_times, audio_duration)
     # beat time interval lower limit: 100ms
@@ -54,7 +54,7 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
         onset_times = quantize_note_times(numpy_notes[:, 0], beat_times_interpolated)
         offset_times = quantize_note_times(numpy_notes[:, 1], beat_times_interpolated)
     except ValueError as e:
-        print(f"{e} in {score_id}")
+        print(f"{e} in {piano_id}")
         raise
     onset_time_indices = np.searchsorted(beat_times_interpolated, onset_times)
     offset_time_indices = np.searchsorted(beat_times_interpolated, offset_times)
@@ -68,10 +68,10 @@ def main(meta_path: Path, data_dir: Path, sub_beats: int, sr: int):
         numpy_notes_quantized[:, 1] - numpy_notes_quantized[:, 0] > 0
     ]
     np.save(
-        data_dir / "midi_quantized_numpy" / f"{score_id}.npy", numpy_notes_quantized
+        data_dir / "midi_quantized_numpy" / f"{piano_id}.npy", numpy_notes_quantized
     )
     np.save(
-        data_dir / "beat_times_interpolated" / f"{score_id}.npy",
+        data_dir / "beat_times_interpolated" / f"{piano_id}.npy",
         beat_times_interpolated,
     )
     OmegaConf.save(meta, meta_path)

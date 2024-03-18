@@ -19,12 +19,12 @@ if __name__ == "__main__":
         for meta_path in data_dir.glob("metadata/*.yaml")
         if (meta := OmegaConf.load(meta_path)).get("youtube") is not None
         and meta.metrics.opt_chroma_shift == 0
-        and meta.score.num_tracks == 2
+        and meta.piano.num_tracks == 2
     ]
     metrics = [*meta_list[0].metrics.keys()]
     df = pd.DataFrame(
-        [[meta.score.id] + [*meta.metrics.values()] for meta in meta_list],
-        columns=["score_id"] + metrics,
+        [[meta.piano.id] + [*meta.metrics.values()] for meta in meta_list],
+        columns=["piano_id"] + metrics,
     )
     df_filtered = df[
         (df["norm_wp_std"] < threshold["norm_wp_std"])
@@ -34,8 +34,8 @@ if __name__ == "__main__":
         & (df["tempogram_min_similarity"] > threshold["tempogram_min_similarity"])
     ]
 
-    dataset_ids = df_filtered["score_id"].to_numpy()
-    train_ids, test_ids = train_test_split(dataset_ids, test_size=0.1, random_state=42)
+    dataset_ids = df_filtered["piano_id"].to_numpy()
+    train_ids, test_ids = train_test_split(dataset_ids, test_size=0.2, random_state=42)
     val_ids, test_ids = train_test_split(test_ids, test_size=0.5, random_state=42)
 
     np.savez(

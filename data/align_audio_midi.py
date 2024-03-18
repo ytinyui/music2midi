@@ -256,14 +256,14 @@ def main(
     feature_rate: int,
 ):
     meta = OmegaConf.load(meta_path)
-    score_id = meta.score.id
-    song_path = data_dir / "audio" / f"{score_id}.wav"
-    song_processed_path = data_dir / "audio_preprocessed" / f"{score_id}.wav"
-    midi_path = data_dir / "midi" / f"{score_id}.mid"
-    midi_transposed_path = data_dir / "midi_transposed" / f"{score_id}.mid"
-    midi_aligned_path = data_dir / "midi_aligned" / f"{score_id}.mid"
-    wp_path = data_dir / "warp_path" / f"{score_id}.npy"
-    beat_times_path = data_dir / "beat_times_aligned" / f"{score_id}.npy"
+    piano_id = meta.piano.id
+    song_path = data_dir / "audio" / f"{piano_id}.wav"
+    song_processed_path = data_dir / "audio_preprocessed" / f"{piano_id}.wav"
+    midi_path = data_dir / "midi" / f"{piano_id}.mid"
+    midi_transposed_path = data_dir / "midi_transposed" / f"{piano_id}.mid"
+    midi_aligned_path = data_dir / "midi_aligned" / f"{piano_id}.mid"
+    wp_path = data_dir / "warp_path" / f"{piano_id}.npy"
+    beat_times_path = data_dir / "beat_times_aligned" / f"{piano_id}.npy"
     if wp_path.exists():
         print(f"{wp_path} already exists")
         return
@@ -306,7 +306,7 @@ def main(
     midi_aligned.write(str(midi_aligned_path))
     np.save(beat_times_path, beat_times_aligned)
     np.save(wp_path, wp)
-    meta.score.num_tracks = len(midi_data.instruments)
+    meta.piano.num_tracks = len(midi_data.instruments)
     meta.youtube.duration = librosa.get_duration(y=song_audio, sr=sr)
     meta.metrics = OmegaConf.create()
     meta.metrics.opt_chroma_shift = int(opt_chroma_shift)

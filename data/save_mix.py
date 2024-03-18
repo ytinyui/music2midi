@@ -18,16 +18,16 @@ def main(
     output_sr: int = 22050,
     output_mono: bool = True,
 ):
-    score_id = song_path.stem
-    midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
+    piano_id = song_path.stem
+    midi_path = data_dir / "midi_aligned" / f"{piano_id}.mid"
     if not midi_path.exists():
         print(f"{midi_path} file not found")
         return
-    mix_path = data_dir / "audio_mix" / f"{score_id}.mp3"
+    mix_path = data_dir / "audio_mix" / f"{piano_id}.mp3"
     midi_data = PrettyMIDI(str(midi_path))
     midi_synth = midi_data.synthesize(fs=sr)
 
-    midi_synth_path = mix_path.with_name(score_id + "_midi.wav")
+    midi_synth_path = mix_path.with_name(piano_id + "_midi.wav")
     sf.write(str(midi_synth_path), midi_synth, sr)
 
     filter_complex = (
@@ -53,7 +53,7 @@ def main(
         ]
     )
     if process.wait() != 0:
-        print(f"{score_id}: error in ffmpeg")
+        print(f"{piano_id}: error in ffmpeg")
     os.remove(midi_synth_path)
 
 

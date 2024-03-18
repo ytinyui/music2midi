@@ -11,8 +11,8 @@ warnings.filterwarnings("ignore")
 
 
 def main(data_dir: Path, meta_path: Path):
-    score_id = meta_path.stem
-    midi_path = data_dir / "midi" / f"{score_id}.mid"
+    piano_id = meta_path.stem
+    midi_path = data_dir / "midi" / f"{piano_id}.mid"
     try:
         midi_data = PrettyMIDI(str(midi_path))
         midi_notes = [note for track in midi_data.instruments for note in track.notes]

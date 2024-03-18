@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 
 def valid_title(meta: DictConfig) -> bool:
-    for title in [meta.score.title, meta.song.title]:
+    for title in [meta.piano.title, meta.song.title]:
         for word in ["misc", "medley", "mashup", "mash-up", "mashups", "guess"]:
             if re.search(rf"\b{word}\b", title, re.IGNORECASE):
                 return False
@@ -31,7 +31,7 @@ def get_search_key(meta: DictConfig, word_blacklist: list[str] = []) -> str:
         or "anonymous" in meta.song.artist.lower()
         or "OST" in meta.song.title
     ):
-        search_key = meta.score.title
+        search_key = meta.piano.title
     else:
         search_key = f"{meta.song.artist} - {meta.song.title}"
 
@@ -50,16 +50,16 @@ def search_youtube(
     quiet: bool = True,
 ) -> None:
     search_key = get_search_key(meta, word_blacklist)
-    score_id = meta.score.id
-    score_duration = meta.score.duration
+    piano_id = meta.piano.id
+    score_duration = meta.piano.duration
 
-    output_csv = output_dir / f"{score_id}.csv"
+    output_csv = output_dir / f"{piano_id}.csv"
     if output_csv.exists():
         print(f"{output_csv} already exists")
         return
     with output_csv.open("w") as f:
         f.write(
-            "score_id,yt_id,search_key,yt_title,score_duration,yt_duration,yt_view_count\n"
+            "piano_id,yt_id,search_key,yt_title,score_duration,yt_duration,yt_view_count\n"
         )
 
     def download_filter(
@@ -71,18 +71,18 @@ def search_youtube(
         return None: accepted
         """
         if (duration := info.get("duration")) is None:
-            return f"{score_id} | no duration"
+            return f"{piano_id} | no duration"
         if abs(duration - score_duration) > 60:
-            return f"{score_id} | duration filtered: {duration}"
+            return f"{piano_id} | duration filtered: {duration}"
 
         for x in word_blacklist:
             if x.casefold() in (title := info.get("title")).casefold():
-                return f"{score_id} | title filtered: {title}"
+                return f"{piano_id} | title filtered: {title}"
 
         with output_csv.open("a") as f:
             f.write(
                 "{},{},{},{},{},{},{}\n".format(
-                    score_id,
+                    piano_id,
                     info.get("id"),
                     search_key.replace(",", " "),
                     info.get("title").replace(",", " ").replace("\n", "").strip(),
@@ -105,7 +105,7 @@ def search_youtube(
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.extract_info(f"ytsearch{search_count}:{search_key}")
     except Exception as e:
-        print(f"{e} ({score_id})")
+        print(f"{e} ({piano_id})")
         output_csv.unlink()
         raise
 
@@ -124,11 +124,11 @@ def main(
         [
             valid_title(meta),
             valid_artist(meta),
-            meta.score.duration <= 600,
+            meta.piano.duration <= 600,
         ]
     ):
         return
-    if meta.score.genre != "classical":
+    if meta.piano.genre != "classical":
         word_blacklist.append("piano")
     search_youtube(
         meta,

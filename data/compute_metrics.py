@@ -13,22 +13,22 @@ def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
     """
     Compute metrics of the data item and write them to the metadata yaml file.
 
-    Return: list of metrics: list[score_id, ...]
+    Return: list of metrics: list[piano_id, ...]
     """
     meta = OmegaConf.load(meta_path)
-    score_id = meta.score.id
-    audio_path = data_dir / "audio_preprocessed" / f"{score_id}.wav"
+    piano_id = meta.piano.id
+    audio_path = data_dir / "audio_preprocessed" / f"{piano_id}.wav"
     if not audio_path.exists():
         return
     duration = meta.youtube.duration
 
     # load data
-    warp_path = np.load(data_dir / "warp_path" / f"{score_id}.npy")
-    beat_times = np.load(data_dir / "beat_times_aligned" / f"{score_id}.npy")
-    SM = np.load(data_dir / "similarity" / f"{score_id}.npz")
+    warp_path = np.load(data_dir / "warp_path" / f"{piano_id}.npy")
+    beat_times = np.load(data_dir / "beat_times_aligned" / f"{piano_id}.npy")
+    SM = np.load(data_dir / "similarity" / f"{piano_id}.npz")
     chroma_similarity = SM.get("chroma_cqt")
     tempogram_similarity = SM.get("tempogram")
-    numpy_notes = np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
+    numpy_notes = np.load(data_dir / "midi_numpy" / f"{piano_id}.npy")
     # Compute metrics
     wp_std = np.std(warp_path[0] - warp_path[1])
     norm_wp_std = wp_std / duration
@@ -50,7 +50,7 @@ def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
 
     chroma_min = chroma_similarity.min()
     tempogram_min = tempogram_similarity.min()
-    norm_time_diff = abs(duration - meta.score.duration) / duration
+    norm_time_diff = abs(duration - meta.piano.duration) / duration
 
     # write to yaml
     metrics = meta.metrics
@@ -63,7 +63,7 @@ def compute_metrics(meta_path: Path, data_dir: Path) -> list[list]:
     OmegaConf.save(meta, meta_path)
 
     return [
-        score_id,
+        piano_id,
         metrics.opt_chroma_shift,
         norm_wp_std,
         beat_local_fluctuation,
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     df = pd.DataFrame(
         metrics_list,
         columns=[
-            "score_id",
+            "piano_id",
             "opt_chroma_shift",
             "norm_wp_std",
             "beat_local_fluctuation",

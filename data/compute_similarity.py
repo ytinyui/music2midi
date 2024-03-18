@@ -69,9 +69,9 @@ def main(
     hop_length: int = 512,
     chunk_size: int = 96,
 ):
-    score_id = song_path.stem
-    midi_path = data_dir / "midi_aligned" / f"{score_id}.mid"
-    output_path = data_dir / "similarity" / f"{score_id}.npz"
+    piano_id = song_path.stem
+    midi_path = data_dir / "midi_aligned" / f"{piano_id}.mid"
+    output_path = data_dir / "similarity" / f"{piano_id}.npz"
     if output_path.exists():
         print(f"{output_path} already exists")
         return
