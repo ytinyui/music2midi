@@ -1,5 +1,4 @@
 import io
-import multiprocessing
 from contextlib import redirect_stdout
 from datetime import datetime
 from pathlib import Path
@@ -12,142 +11,26 @@ import pretty_midi
 import pytorch_lightning as pl
 import soundfile as sf
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from joblib import Parallel, delayed
 from omegaconf import OmegaConf
 from torch.nn.utils.rnn import pad_sequence
-from transformers import GPT2Config, GPT2LMHeadModel, Swinv2Config, Swinv2Model
 from transformers.optimization import Adafactor, AdafactorSchedule
 
-import wandb
 from data.align_audio_midi import get_warp_path
 
-from .input import LogMelSpectrogram, MelConditioner, ModelInputs
-from .tokenizer import MidiTokenizer
+from .evaluation import evaluate_batch
+from .input import ModelInputs
+from .transformer import T5Transformer, VisionTransformer
 from .utils import numpy_to_midi, to_stereo
-
-
-class ContrastiveLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.temp = nn.Parameter(torch.ones(1))
-
-    def forward(self, x1: torch.Tensor, x2: torch.Tensor):
-        assert x1.shape == x2.shape
-        sim = F.cosine_similarity(x1.unsqueeze(0), x2.unsqueeze(1), dim=-1).mean(dim=-1)
-        return F.cross_entropy(sim / self.temp, torch.arange(x1.shape[0]).to(x1.device))
-
-
-class EncoderDecoderTransformer(nn.Module):
-    def __init__(self, config_path: str):
-        super().__init__()
-        self.config = OmegaConf.load(config_path)
-        self.encoder_config = Swinv2Config(**self.config.swinv2)
-        self.decoder_config = GPT2Config.from_pretrained("gpt2")
-        for k, v in self.config.gpt2.items():
-            setattr(self.decoder_config, k, v)
-
-        encoder_hidden_size = self.encoder_config.hidden_size
-        decoder_hidden_size = self.decoder_config.n_embd
-        self.encoder = Swinv2Model(self.encoder_config)
-        self.proj = nn.Linear(encoder_hidden_size, decoder_hidden_size)
-        self.decoder = GPT2LMHeadModel(self.decoder_config)
-
-        self.tokenizer = MidiTokenizer(self.config)
-        self.spectrogram = LogMelSpectrogram(
-            sample_rate=self.config.dataset.sample_rate,
-            n_mels=self.config.swinv2.image_size,
-            **self.config.spectrogram,
-        )
-        self.contrastive_loss = ContrastiveLoss()
-
-        n_genre = len(self.config.genre_id.keys())
-        n_difficulty = len(self.config.difficulty_id.keys())
-        self.mel_conditioner = MelConditioner(
-            n_genre,
-            n_difficulty,
-            n_dim=decoder_hidden_size,
-        )
-
-    def forward(self, inputs: ModelInputs, **kwargs) -> dict:
-        labels = self.tokenizer(inputs.notes_batch, padding="left")
-        max_length = self.decoder.config.n_positions
-        if labels.shape[-1] > max_length:
-            labels = labels[:, :max_length]
-        if inputs.input_waveform is None:
-            return self.decoder(input_ids=labels, labels=labels, **kwargs)
-
-        encoder_inputs = self.spectrogram(inputs.input_waveform)
-        b, _, h, w = encoder_inputs.shape
-        assert (
-            h == w == self.encoder_config.image_size
-        ), f"(n_mels, sequence length) = {(h,w)} and encoder image size ({self.encoder_config.image_siz}) mismatch"
-
-        encoder_out = self.encoder(encoder_inputs)
-        hidden_states = self.proj(encoder_out.last_hidden_state)
-        if inputs.genre_id is None or inputs.difficulty_id is None:
-            hidden_states_conditioned = hidden_states
-        else:
-            hidden_states_conditioned = self.mel_conditioner(
-                hidden_states, inputs.genre_id, inputs.difficulty_id
-            )
-
-        labels = labels.to(self.decoder.device)
-        attention_mask = labels != self.decoder.config.pad_token_id
-
-        decoder_outputs = self.decoder(
-            input_ids=labels,
-            attention_mask=attention_mask,
-            labels=labels,
-            encoder_hidden_states=hidden_states_conditioned,
-            **kwargs,
-        )
-
-        if inputs.notes_waveform is not None:
-            notes_spectrogram = self.spectrogram(inputs.notes_waveform)
-            encoder_out2 = self.encoder(notes_spectrogram)
-            ct_loss = self.contrastive_loss(
-                encoder_out.last_hidden_state, encoder_out2.last_hidden_state
-            )
-            decoder_outputs["ct_loss"] = ct_loss
-
-        return decoder_outputs
-
-    def generate(self, inputs: ModelInputs, **kwargs) -> torch.Tensor:
-        encoder_inputs = self.spectrogram(inputs.input_waveform)
-        b, _, h, w = encoder_inputs.shape
-        assert (
-            h == w == self.encoder_config.image_size
-        ), f"(n_mels, sequence length) = {(h,w)} and encoder image size ({self.encoder_config.image_siz}) mismatch"
-
-        encoder_out = self.encoder(encoder_inputs)
-        hidden_states = self.proj(encoder_out.last_hidden_state)
-        if inputs.genre_id is None and inputs.difficulty_id is None:
-            hidden_states_conditioned = hidden_states
-        else:
-            hidden_states_conditioned = self.mel_conditioner(
-                hidden_states, inputs.genre_id, inputs.difficulty_id
-            )
-
-        decoder_outputs = self.decoder.generate(
-            input_ids=torch.ones((b, 1)).long().to(self.decoder.device),
-            encoder_hidden_states=hidden_states_conditioned,
-            **kwargs,
-        )
-        return decoder_outputs
 
 
 class Music2Midi(pl.LightningModule):
     def __init__(self, config_path: str):
         super().__init__()
         self.config = OmegaConf.load(config_path)
-        self.model = EncoderDecoderTransformer(config_path)
-
-    def setup(self, stage=None):
-        now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        config_dict = OmegaConf.to_container(self.model.config)
-        wandb.init(project="music2midi", name=now_time, config=config_dict)
+        model_class = eval(self.config.model.class_)
+        assert model_class in [T5Transformer, VisionTransformer]
+        self.model: Union[T5Transformer, VisionTransformer] = model_class(config_path)
+        self.save_hyperparameters()
 
     def configure_optimizers(self):
         optimizer = Adafactor(self.parameters(), warmup_init=True)
@@ -156,35 +39,46 @@ class Music2Midi(pl.LightningModule):
 
     def training_step(self, inputs: ModelInputs, batch_idx):
         outputs = self.model(inputs)
-        wandb_logs = {"epoch": self.current_epoch}
-
         loss = outputs.loss
-        self.log("ce_loss_train", loss, prog_bar=True)
-        wandb_logs["ce_loss_train"] = loss
+        self.log("train/ce_loss", loss, prog_bar=True)
 
         if "ct_loss" in outputs.keys():
             ct_loss = outputs.ct_loss
-            self.log("ct_loss_train", ct_loss, prog_bar=True)
-            wandb_logs["ct_loss_train"] = ct_loss
+            self.log("train/ct_loss", ct_loss)
+            loss = loss + ct_loss
 
-        wandb.log(wandb_logs)
-        return loss + ct_loss
+        if (self.global_step + 1) % self.config.trainer.log_every_n_steps == 0:
+            metrics, _, _ = self.evaluate_batch(inputs)
+            for k, v in metrics.items():
+                self.log(f"train/melody_{k}", v)
+        return loss
 
     def validation_step(self, inputs: ModelInputs, batch_idx):
         outputs = self.model(inputs)
-        wandb_logs = {"epoch": self.current_epoch}
-
         loss = outputs.loss
-        self.log("ce_loss_val", loss, prog_bar=True)
-        wandb_logs["ce_loss_val"] = loss
+        self.log("val/ce_loss", loss, prog_bar=True)
 
         if "ct_loss" in outputs.keys():
             ct_loss = outputs.ct_loss
-            self.log("ct_loss_val", ct_loss, prog_bar=True)
-            wandb_logs["ct_loss_val"] = ct_loss
+            self.log("val/ct_loss", ct_loss)
+            loss = loss + ct_loss
 
-        wandb.log(wandb_logs)
-        return loss + ct_loss
+        metrics, _, _ = self.evaluate_batch(inputs)
+        for k, v in metrics.items():
+            self.log(f"val/melody_{k}", v)
+        return loss
+
+    @torch.no_grad()
+    def evaluate_batch(self, inputs: ModelInputs):
+        max_num_notes = max(len(notes) for notes in inputs.notes_batch)
+        generated_outputs = self.model.generate(inputs, max_length=max_num_notes * 4)
+        decoded_notes = self.model.tokenizer.decode(generated_outputs, mode="batched")
+
+        label_midi = [numpy_to_midi(notes) for notes in inputs.notes_batch]
+        output_midi = [numpy_to_midi(notes) for notes in decoded_notes]
+        metrics = evaluate_batch(label_midi, output_midi)
+
+        return metrics, output_midi, label_midi
 
     @torch.no_grad()
     def generate(

@@ -90,34 +90,19 @@ class MidiTokenizer:
         self,
         notes_batch: Iterable[np.ndarray],
         cutoff_time: Optional[int] = None,
-        padding: Optional[Literal["left", "right"]] = "left",
     ) -> torch.Tensor:
         """
         tokenize a tuple of notes and return a batched tensor
-
-        use right padding for batched inference
         """
         assert isinstance(notes_batch, Iterable), "notes should be passed in batch"
         tokens_batch = [self._tokenize(notes, cutoff_time) for notes in notes_batch]
-        if len(tokens_batch) == 1:
-            return tokens_batch[0]
-
-        if padding == "left":
-            return pad_sequence(
-                tokens_batch, batch_first=True, padding_value=PAD
-            ).long()
-        elif padding == "right":
-            tokens_batch = [tokens[::-1] for tokens in tokens_batch]
-            return pad_sequence(
-                tokens_batch, batch_first=True, padding_value=PAD
-            ).long()[:, ::-1]
-        raise ValueError(f"Invalid argument padding={padding}")
+        return pad_sequence(tokens_batch, batch_first=True, padding_value=PAD).long()
 
     def _tokenize(
         self,
         notes: np.ndarray,
         cutoff_time: Optional[int] = None,
-    ) -> np.ndarray:
+    ) -> torch.Tensor:
         """
         cutoff_time: optional. Drop all notes after cutoff_time
 

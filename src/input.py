@@ -10,8 +10,7 @@ class ModelInputs(NamedTuple):
     input_waveform: torch.Tensor
     notes_batch: Optional[tuple[np.ndarray]] = None
     notes_waveform: Optional[torch.Tensor] = None
-    genre_id: Optional[torch.LongTensor] = None
-    difficulty_id: Optional[torch.LongTensor] = None
+    cond_index: Optional[list[torch.LongTensor]] = None
 
 
 class LogMelSpectrogram(nn.Module):
@@ -35,36 +34,25 @@ class LogMelSpectrogram(nn.Module):
     def forward(self, x):
         """
         x : waveform(batch, sample)
-        return : melspec(batch, 1, freq, frame)
+        return : melspec(batch, freq, frame)
         """
         with torch.no_grad():
-            x = self.melspectrogram(x.float())
+            x = self.melspectrogram(x.float()).transpose(-2, -1)
             x = x.clamp(min=1e-6).log()
+        return x
 
-        return x.unsqueeze(1)
 
-
-class MelConditioner(nn.Module):
-    def __init__(self, n_genre: int, n_difficulty: int, n_dim: int):
+class Conditioning(nn.Module):
+    def __init__(self, n_dim: int, num_embeds: list[int]):
         super().__init__()
-        self.embedding_genre = nn.Embedding(num_embeddings=n_genre, embedding_dim=n_dim)
-        self.embedding_difficulty = nn.Embedding(
-            num_embeddings=n_difficulty, embedding_dim=n_dim
-        )
+        self.embeds = nn.ModuleList([nn.Embedding(num, n_dim) for num in num_embeds])
 
-    def forward(
-        self,
-        feature: torch.Tensor,
-        genre_index: torch.Tensor,
-        difficulty_index: torch.Tensor,
-    ):
+    def forward(self, feature: torch.Tensor, indices: list[torch.Tensor]):
         """
         Concatenate embeddings to feature
 
         feature: (batch, L, n_dim)
         index : (batch, )
         """
-        # (batch, 1, feature_dim)
-        embedding_genre = self.embedding_genre(genre_index)
-        embedding_difficulty = self.embedding_difficulty(difficulty_index)
-        return torch.cat([embedding_genre, embedding_difficulty, feature], dim=1)
+        concat_embeds = [embed(index) for embed, index in zip(self.embeds, indices)]
+        return torch.cat(concat_embeds + [feature], dim=1)

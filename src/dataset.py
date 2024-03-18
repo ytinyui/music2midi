@@ -15,28 +15,28 @@ from .utils import numpy_to_midi, pad_audio
 
 
 class MetadataDict:
-    def __init__(self, score_ids: list[str], data_dir: Path, config_path: str):
+    def __init__(self, piano_ids: list[str], data_dir: Path, config_path: str):
         super().__init__()
         self.data_dir = data_dir
         self.config = OmegaConf.load(config_path)
         self.key_dict = {
-            "genre": {k: v for k, v in self.config.genre_id.items()},
-            "difficulty": {k: v for k, v in self.config.difficulty_id.items()},
+            key: {item: i for i, item in enumerate(self.config.conditioning.get(key))}
+            for key in self.config.conditioning.keys()
         }
-        load_meta_fn = lambda x: (
-            x,
-            OmegaConf.load(self.data_dir / "metadata" / f"{x}.yaml"),
+        read_metadata = lambda piano_id: (
+            piano_id,
+            OmegaConf.load(self.data_dir / "metadata" / f"{piano_id}.yaml"),
         )
         meta_list = Parallel(n_jobs=multiprocessing.cpu_count() // 2)(
-            delayed(load_meta_fn)(score_id) for score_id in score_ids
+            delayed(read_metadata)(piano_id) for piano_id in piano_ids
         )
         self.meta_dict = {k: v for k, v in meta_list}
 
-    def get(self, key: Literal["genre", "difficulty"], score_id: str):
+    def get(self, piano_id: str) -> list[int]:
         """
-        Get the genre or difficulty id of the sample, given score_id
+        Get the conditioning index of the sample, given piano_id
         """
-        return self.key_dict[key][self.meta_dict[score_id].score[key]]
+        return [v[self.meta_dict[piano_id].piano[k]] for k, v in self.key_dict.items()]
 
 
 class Music2MidiDataModule(pl.LightningDataModule):
@@ -82,74 +82,36 @@ class Music2MidiDataset(Dataset):
     def __init__(
         self,
         data_dir: Path,
-        score_ids: list[str],
+        piano_ids: list[str],
         config_path: Path,
     ):
         super().__init__()
         self.config = OmegaConf.load(config_path)
-        self.metadata_dict = MetadataDict(score_ids, data_dir, config_path)
+        self.metadata_dict = MetadataDict(piano_ids, data_dir, config_path)
         self.data_dir = data_dir
 
         self.audio_paths = [
-            str(data_dir / "audio_preprocessed" / f"{score_id}.wav")
-            for score_id in score_ids
+            str(data_dir / "audio" / f"{piano_id}.wav") for piano_id in piano_ids
         ]
-        if self.config.dataset.quantize_sub_beats:
-            self.midi_notes = [
-                np.load(data_dir / "midi_quantized_numpy" / f"{score_id}.npy")
-                for score_id in score_ids
-            ]
-            self.beat_times_midi_interp = [
-                np.load(data_dir / "beat_times_midi_interp" / f"{score_id}.npy")
-                for score_id in score_ids
-            ]
-            self.warp_paths = [
-                np.load(data_dir / "warp_path" / f"{score_id}.npy")
-                for score_id in score_ids
-            ]
-        else:
-            self.midi_notes = [
-                np.load(data_dir / "midi_numpy" / f"{score_id}.npy")
-                for score_id in score_ids
-            ]
-        self.genre_ids = [
-            self.metadata_dict.get("genre", score_id) for score_id in score_ids
+        self.midi_notes = [
+            np.load(data_dir / "midi_numpy" / f"{piano_id}.npy")
+            for piano_id in piano_ids
         ]
-        self.difficulty_ids = [
-            self.metadata_dict.get("difficulty", score_id) for score_id in score_ids
+        self.midi_synth_paths = [
+            str(data_dir / "midi_synth" / f"{piano_id}.wav") for piano_id in piano_ids
         ]
+        self.cond_indices = [self.metadata_dict.get(piano_id) for piano_id in piano_ids]
 
     def __getitem__(self, index) -> ModelInputs:
         segment_duration = self.config.dataset.segment_duration
-        segment_num_sub_beats = self.config.dataset.segment_num_sub_beats
-        genre_id = self.genre_ids[index]
-        difficulty_id = self.difficulty_ids[index]
+        max_num_notes = self.config.dataset.max_notes_per_second * segment_duration
+        conditioning = self.cond_indices[index]
 
         audio_path = self.audio_paths[index]
+        midi_synth_path = self.midi_synth_paths[index]
         full_duration = librosa.get_duration(path=audio_path)
 
-        if self.config.dataset.quantize_sub_beats:
-            # midi note time is beat index
-            warp_path = self.warp_paths[index]
-            beat_times_midi = self.beat_times_midi_interp[index]
-            midi_start_index = np.random.randint(
-                0, len(beat_times_midi) - 1 - segment_num_sub_beats
-            )
-            midi_end_index = midi_start_index + segment_num_sub_beats
-            notes_segment = get_notes_segment(
-                self.midi_notes[index],
-                midi_start_index,
-                midi_end_index,
-                shift_to_start_time=True,
-            )
-            midi_start_time = beat_times_midi[midi_start_index]
-            midi_end_time = beat_times_midi[midi_end_index]
-            # audio start time
-            start_time = np.interp(midi_start_time, warp_path[1], warp_path[0])
-            end_time = np.interp(midi_end_time, warp_path[1], warp_path[0])
-            # ? segment_duration is different across batch, implement without num_sub_beats
-            segment_duration = end_time - start_time
-        else:
+        while True:
             start_time = np.random.choice(
                 np.arange(0, full_duration - segment_duration, segment_duration)
             )
@@ -160,6 +122,8 @@ class Music2MidiDataset(Dataset):
                 end_time,
                 shift_to_start_time=True,
             )
+            if 0 < len(notes_segment) <= max_num_notes:
+                break
 
         waveform, sr = librosa.load(
             self.audio_paths[index],
@@ -169,15 +133,19 @@ class Music2MidiDataset(Dataset):
         )
         transpose_step = np.random.randint(-6, 6)
         waveform, notes_segment = transpose(waveform, notes_segment, transpose_step, sr)
-        notes_waveform = numpy_to_midi(notes_segment).synthesize(fs=sr)
+        if np.random.rand() < 0.5:
+            notes_waveform, sr = librosa.load(
+                midi_synth_path, sr=sr, offset=start_time, duration=segment_duration
+            )
+        else:
+            notes_waveform = numpy_to_midi(notes_segment).synthesize(fs=sr)
         waveform, notes_waveform = pad_audio(waveform, notes_waveform, mode="fix_x")
 
         return (
             torch.from_numpy(waveform),
             notes_segment,
             torch.from_numpy(notes_waveform),
-            torch.LongTensor([genre_id]),
-            torch.LongTensor([difficulty_id]),
+            [torch.LongTensor([index]) for index in conditioning],
         )
 
     def __len__(self):
@@ -203,9 +171,9 @@ def transpose(waveform, notes, step, sr):
 
 
 def collate_fn(batch):
-    waveform, notes_batch, notes_waveform, genre_id, difficulty_id = zip(*batch)
+    waveform, notes_batch, notes_waveform, cond_index = zip(*batch)
     waveform = torch.stack(waveform)
     notes_waveform = torch.stack(notes_waveform)
-    genre_id = torch.stack(genre_id)
-    difficulty_id = torch.stack(difficulty_id)
-    return ModelInputs(waveform, notes_batch, notes_waveform, genre_id, difficulty_id)
+    cond_index = list(zip(*cond_index))
+    cond_index = [torch.stack(index) for index in cond_index]
+    return ModelInputs(waveform, notes_batch, notes_waveform, cond_index)
