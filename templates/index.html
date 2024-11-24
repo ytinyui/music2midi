@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music2MIDI: Pop Music to MIDI Piano Generation</title>
+    <link rel="stylesheet" href="static/css/styles.css" />
+    <link rel="stylesheet" href="static/css/home.css" />
+    <script>
+      function clearYouTubeLink() {
+        document.getElementById("url").value = "";
+      }
+      function clearFileInput() {
+        document.getElementById("file").value = "";
+      }
+    </script>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Music2MIDI: Pop Music to MIDI Piano Cover Generation</h1>
+      <div class="description">
+        <p>Enter YouTube video link or upload a file:</p>
+      </div>
+      <form
+        action="{{ url_for('generate') }}"
+        method="post"
+        enctype="multipart/form-data"
+      >
+        <div class="form-group">
+          <label for="url">YouTube link:</label>
+          <input type="text" name="url" id="url" onchange="clearFileInput()" />
+        </div>
+        <div class="form-group">
+          <label for="file">Upload file:</label>
+          <input
+            type="file"
+            accept="audio/*, video/*"
+            name="file"
+            id="file"
+            onchange="clearYouTubeLink()"
+          />
+        </div>
+        <div class="form-group">
+          <input class="button" type="submit" value="Generate" />
+        </div>
+      </form>
+    </div>
+    {% if error %}
+    <script>
+      alert("{{ error }}");
+      window.location.href = "/";
+    </script>
+    {% endif %}
+  </body>
+</html>

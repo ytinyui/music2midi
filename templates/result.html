@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music2MIDI</title>
+    <link rel="stylesheet" href="static/css/styles.css" />
+    <link rel="stylesheet" href="static/css/result.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Music2MIDI Generation Result</h1>
+      <button id="playPauseButton" class="button">Play</button>
+      <div class="progress controls">
+        <input type="range" id="progressBar" min="0" value="0" />
+        <span class="time-display" id="currentTime">00:00 </span>/<span
+          class="time-display"
+          id="endTime"
+          >00:00
+        </span>
+      </div>
+      <div class="controls-wrapper">
+        <span>Mix control</span>
+        <div class="controls"">
+        <span class="label-left">Piano</span>
+        <input type="range" id="volumeSlider" min="0" max="100" value="50" />
+        <span class="label-right">Original</span>
+      </div>
+    </div>
+    <br />
+    <video id="video" src="{{ video_path }}" width="600"></video>
+    <audio id="audio" src="{{ audio_path }}"></audio>
+    <br />
+    <button
+      id="homeButton"
+      class="button"
+      onclick="javascript:window.location.href='/'"
+    >
+      Back
+    </button>
+    <script src="static/js/preview.js"></script>
+    <script>
+      const display_video = JSON.parse("{{ display_video | tojson | safe}}");
+      if (display_video === false) {
+        video.style.display = "none";
+      }
+    </script>
+  </body>
+</html>

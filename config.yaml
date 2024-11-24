@@ -1,0 +1,50 @@
+dataset:
+  sample_rate: 22050
+  dtw_feature_rate: 50
+  segment_duration: 3
+  max_notes_per_second: 30
+  filter_threshold:
+    wp_std: 5
+    max_beat_fluctuation: 1.2
+    max_note_density: 25
+    time_diff_ratio: 0.2
+spectrogram:
+  n_fft: 2048
+  hop_length: 256
+  f_min: 20.0
+model:
+  sample_rate: 16000
+  t5:
+    num_layers: 6
+    num_decoder_layers: 6
+    d_model: 384
+    d_ff: 1152
+    feed_forward_proj: gated-gelu
+    tie_word_embeddings: false
+    tie_encoder_decoder: false
+    vocab_size: 400
+    n_positions: 1024
+    relative_attention_num_buckets: 32
+    pad_token_id: 0
+    bos_token_id: 1
+    eos_token_id: 2
+    decoder_start_token_id: 1
+tokenizer:
+  midi_quantize_ms: 50
+  vocab_size:
+    special: 5
+    pitch: 128
+    time: 200
+  default_velocity: 80
+trainer:
+  max_epochs: 800
+  accumulate_grad_batches: 1
+  log_every_n_steps: 40
+dataloader:
+  batch_size: 16
+  num_workers: 4
+inference:
+  batch_size: 128
+conditioning:
+  genre: ["electronic", "pop", "rock", "soundtrack", "world_music", "classical"]
+  difficulty: ["beginner", "intermediate", "advanced"]

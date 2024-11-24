@@ -1,0 +1,52 @@
+h1 {
+  margin-bottom: 20px;
+  font-size: 28px;
+}
+
+.container {
+  text-align: center;
+}
+
+.controls-wrapper {
+  width: 80%;
+  align-self: center;
+  margin: 10px auto 0 auto;
+}
+
+.controls {
+  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 30% 40% 30%;
+  align-items: center;
+  margin-top: 5px;
+}
+
+.controls .label-left {
+  text-align: right;
+}
+
+.controls .label-right {
+  text-align: left;
+}
+
+.controls #volumeSlider {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 600px;
+}
+
+.progress input[type="range"] {
+  margin-left: 10px;
+  margin-right: 10px;
+  flex-grow: 1;
+}
+
+#homeButton {
+  margin-top: 20px;
+}
