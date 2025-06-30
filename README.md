@@ -45,6 +45,11 @@ Download the audio files from YouTube.
 python data/download_youtube.py [data_dir]
 ```
 
+### Data preprocessing
+
+The released dataset is already preprocessed.
+See dataset.md if you want to prepare your own dataset.
+
 ## Training
 
 ```bash
