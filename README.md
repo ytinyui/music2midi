@@ -1,6 +1,7 @@
 # Music2MIDI: Pop Music to MIDI Piano Cover Generation
 
 Music2MIDI: a deep learning model that generates MIDI piano cover songs from the original song audio.
+Official repository for [Music2MIDI: Pop Music to MIDI Piano Cover Generation](https://dl.acm.org/doi/10.1007/978-981-96-2064-7_8).
 
 ## Setup
 
